@@ -155,6 +155,8 @@ async function onCallback(q) {
     return send(chat, `Апа, мына сілтемені басыңыз — күдікті қоңырау не хабарлама болса, мен бірден көремін:\nНажмите на ссылку — если будет подозрительный звонок или сообщение, я сразу узнаю:\n${link}`)
   }
 
+  if (data === 'sos') return sendSos(chat, await db.getJSON(userKey(chat)))
+
   const seen = data.match(/^seen:([\w-]+):([\w-]+)$/)
   if (seen) {
     await markAlert(seen[1], seen[2], 'seen')
@@ -171,11 +173,7 @@ async function onMessage(msg) {
 
   const user = await db.getJSON(userKey(chat))
 
-  if (text === SOS_LABEL || text === '/sos') {
-    if (!user?.fid || user.role !== 'elder') return send(chat, 'SOS жіберу үшін балаңыздан сілтеме сұраңыз.\nЧтобы SOS дошёл до семьи, попросите у сына или дочери ссылку-приглашение.')
-    const alert = await raiseAlert(user.fid, makeSosAlert(user.name))
-    return send(chat, alert.tg_delivered ? 'Балаңызға хабар жіберілді. Ешкімге ақша аудармаңыз, код айтпаңыз.\nСемья получила сигнал. Ничего не переводите и не называйте коды.' : 'Отбасыңыздан әлі ешкім қосылмаған. / В семье пока никто не подписан на тревоги.')
-  }
+  if (text === SOS_LABEL || text === '/sos') return sendSos(chat, user)
 
   if (msg.voice || msg.audio || msg.video_note) {
     return send(chat, 'Дауыстық хабарды әзірге тыңдай алмаймын. Пернетақтадағы микрофонды басып, мәтінмен жіберіңіз.\nГолосовые пока не распознаю. Нажмите микрофон на клавиатуре телефона — он сам превратит речь в текст — и отправьте.')
@@ -194,7 +192,16 @@ async function onMessage(msg) {
     const alert = await raiseAlert(user.fid, makeCheckAlert(r, text, user.name))
     alerted = alert.tg_delivered > 0
   }
-  return send(chat, verdictMessage(r, alerted), user?.role === 'elder' ? { reply_markup: elderKeyboard } : {})
+  // При риске SOS — прямо под ответом: клавиатуру внизу Telegram часто прячет
+  const markup = user?.role === 'elder' && user.fid && r.verdict !== 'safe' ? { inline_keyboard: [[{ text: SOS_LABEL, callback_data: 'sos' }]] }
+    : user?.role === 'elder' ? elderKeyboard : undefined
+  return send(chat, verdictMessage(r, alerted), markup ? { reply_markup: markup } : {})
+}
+
+async function sendSos(chat, user) {
+  if (!user?.fid || user.role !== 'elder') return send(chat, 'SOS жіберу үшін балаңыздан сілтеме сұраңыз.\nЧтобы SOS дошёл до семьи, попросите у сына или дочери ссылку-приглашение.')
+  const alert = await raiseAlert(user.fid, makeSosAlert(user.name))
+  return send(chat, alert.tg_delivered ? 'Балаңызға хабар жіберілді. Ешкімге ақша аудармаңыз, код айтпаңыз.\nСемья получила сигнал. Ничего не переводите и не называйте коды.' : 'Отбасыңыздан әлі ешкім қосылмаған. / В семье пока никто не подписан на тревоги.', { reply_markup: elderKeyboard })
 }
 
 export async function handleTelegram(req, body) {
