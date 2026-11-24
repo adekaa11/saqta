@@ -16,7 +16,7 @@ const RULES = [
   { type: 'safe_account', w: 35, re: /безопасн\w*\s+сч[её]т\w*|резервн\w*\s+сч[её]т\w*|қауіпсіз\s+шот\w*/i },
   { type: 'remote_access', w: 30, re: /anydesk|rustdesk|демонстрац\w*\s+экран\w*|скачайте\s+приложени\w*/i },
   { type: 'authority', w: 20, re: /(служб\w*\s+безопасност\w*[^.,!?]{0,20}|(позвонил\w*|звонят|звонок)\s+(из|от)\s+\S+|(kaspi|halyk|freedom|jusan|forte)\S*\s+банк\S*\s+\S*(шалды|қызмет\S*)|қауіпсіздік\s+қызмет\S*|1414|egov|цон|аррфр|полици\w*)/i },
-  { type: 'payment_request', w: 20, re: /перевед\w*\s+\S+|переведите|аударыңыз|оплатите\s+\S+|получите\s+деньги[^.]{0,20}/i },
+  { type: 'payment_request', w: 20, re: /перевед\w*\s+\S+|переведите|аударыңыз|оплатите\s+\S+|получите\s+деньги(\s+по\s+ссылке)?/i },
   { type: 'personal_data', w: 20, re: /\bиин\b|\bжсн\b|номер\s+карты|cvv|срок\s+действия/i },
   { type: 'urgency', w: 15, re: /срочно|немедленно|заблокир\w*|пытаются\s+списать\s+\S+|подозрительн\w*\s+\S+|күдікті\s+\S+(\s+\S+)?|бұғатта\w*|шұғыл|иначе\s+[^.,!?]+|әйтпесе\s+[^.,!?]+/i },
   { type: 'link', w: 15, re: /https?:\/\/\S+|bit\.ly\/\S+/i },
@@ -24,6 +24,7 @@ const RULES = [
   // Живая речь: браузер пишет «эсэмэс», «каспи», «код» без «SMS» — ловим разговорные формы
   { type: 'sms_code', w: 35, re: /(назвать|сказать|продиктовать|сообщить|айт\w*)\s+(\S+\s+){0,2}код\w*|код\w*\s+(\S+\s+){0,2}(назвать|сказать|айт\w*)|эсэмэс|смс-?\s*код/i },
   { type: 'authority', w: 20, re: /(позвонил\w*|звонил\w*|қоңырау\s+шалды)\s+(\S+\s+){0,2}(каспи|kaspi|халык|halyk|банк\w*|полици\w*)|из\s+(каспи|халык|банка)|(каспи|халык)\S*\s+банк\S*/i },
+  { type: 'authority', w: 20, re: /\S*(банк|bank)\S*\s+(\S+\s+){0,2}(қоңырау\s+шал\S*|хабарлас\S*)|полиция\S*\s+(\S+\s+){0,2}(қоңырау\s+шал\S*|хабарлас\S*)/i },
   { type: 'urgency', w: 15, re: /списа\w*|пропад\w*|сгор\w*|украд\w*|жоғал\w*/i }
 ].map((r) => ({ ...r, re: uni(r.re) }))
 
@@ -53,13 +54,17 @@ export function ruleAnalyze(text) {
   for (const r of RULES) {
     if (flags.some((f) => f.type === r.type)) continue // один тип — одна улика
     const m = text.match(r.re)
-    if (m && m[0].trim().length > 1) {
+    const hit = m ? m[0].trim().replace(/[.,!?;:]+$/, '') : ''
+    if (hit.length > 1) {
       score += r.w
       const [ru, kk] = FLAG_TEXT[r.type]
-      flags.push({ text: m[0].trim(), type: r.type, explanation_ru: ru, explanation_kk: kk })
+      flags.push({ text: hit, type: r.type, explanation_ru: ru, explanation_kk: kk })
     }
   }
-  score = Math.min(100, score)
+  // Классическая связка: представились банком/госорганом И просят код, перевод или данные
+  const asks = ['sms_code', 'safe_account', 'remote_access', 'payment_request', 'personal_data']
+  if (flags.some((f) => f.type === 'authority') && flags.some((f) => asks.includes(f.type))) score += 20
+  score = Math.min(97, score) // 100% уверенности правила не дают
   if (!flags.length) score = 6
   else if (score < 40) score = 40 + Math.min(19, score / 2) // есть улика — минимум «күдікті»
   score = Math.round(score)
@@ -81,12 +86,9 @@ export function ruleAnalyze(text) {
   }
 }
 
-// Демо-сообщения дают выверенный ответ (как от LLM), остальное — правила
+// Любой текст, включая примеры на сайте, проходит через одни и те же правила — без заготовленных ответов
 export function analyzeText(text) {
-  const t = text.trim()
-  const demo = mocks.demo_messages.find((d) => d.text.trim() === t)
-  if (demo) return { ...structuredClone(mocks.analyze[demo.key]), id: uid('chk'), created_at: new Date().toISOString() }
-  return ruleAnalyze(t)
+  return ruleAnalyze(text.trim())
 }
 
 export function makeCheckAlert(res, text, member_name) {

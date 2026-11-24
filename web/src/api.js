@@ -128,3 +128,9 @@ export async function resetDemo(familyId = FAMILY_ID) {
 }
 
 export const demoMessages = mocks.demo_messages
+
+// Имя Telegram-бота с сервера (null, если бот не настроен или режим моков)
+export async function getBotName() {
+  if (USE_MOCK) return null
+  try { return (await http('GET', '/health')).telegram_bot || null } catch { return null }
+}

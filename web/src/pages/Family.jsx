@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { getAlerts, patchAlert, USE_MOCK } from '../api'
+import { getAlerts, patchAlert, getBotName, USE_MOCK, FAMILY_ID } from '../api'
 import { useLang, timeAgo } from '../i18n'
 import RimGlow from '../components/RimGlow.jsx'
 import Ornament from '../components/Ornament.jsx'
@@ -37,7 +37,9 @@ export default function Family() {
   const [sound, setSound] = useState(false)
   const [glow, setGlow] = useState(0)
   const [fresh, setFresh] = useState(null)
+  const [bot, setBot] = useState(null)
   const [, tick] = useState(0)
+  useEffect(() => { getBotName().then(setBot) }, [])
   const known = useRef(null)
   const soundRef = useRef(sound)
   soundRef.current = sound
@@ -102,6 +104,15 @@ export default function Family() {
             {sound ? <BellIcon className="h-6 w-6" /> : <BellOffIcon className="h-6 w-6" />}
             {sound ? t.soundOffBtn : t.soundOff}
           </button>
+          {bot && (
+            <a
+              href={`https://t.me/${bot}?start=watch_${FAMILY_ID}`}
+              target="_blank" rel="noreferrer"
+              className="focus-ring inline-flex items-center gap-2 rounded-lg bg-cobalt px-4 py-2 text-lg font-bold text-white hover:bg-cobalt-press"
+            >
+              <BellIcon className="h-6 w-6" /> {t.tgBtn}
+            </a>
+          )}
         </div>
         <h1 className="mt-5 text-[36px] font-black leading-[1.08] tracking-tight text-cobalt-deep sm:text-[42px]">{t.famHello}</h1>
         <p className="mt-2 max-w-lg text-xl font-bold leading-snug text-ink">{t.famMomLine}</p>
