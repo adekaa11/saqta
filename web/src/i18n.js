@@ -101,7 +101,9 @@ export const FLAG_META = {
   link: { kk: 'Күдікті сілтеме', ru: 'Подозрительная ссылка', color: 'blue' },
   too_good: { kk: 'Тым тиімді', ru: 'Слишком выгодно', color: 'amber' },
   personal_data: { kk: 'Жеке деректер', ru: 'Личные данные', color: 'violet' },
-  payment_request: { kk: 'Ақша сұрау', ru: 'Просят деньги', color: 'red' }
+  payment_request: { kk: 'Ақша сұрау', ru: 'Просят деньги', color: 'red' },
+  wrong_transfer: { kk: '«Қате аударым»', ru: '«Ошибочный перевод»', color: 'red' },
+  other: { kk: 'Күдікті белгі', ru: 'Подозрительный признак', color: 'amber' }
 }
 
 export const FLAG_COLORS = {

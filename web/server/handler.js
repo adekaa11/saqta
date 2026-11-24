@@ -1,5 +1,7 @@
 // Saqta API — одна функция Vercel на все /api/* (контракт из PLAN.md, раздел 5).
-import { analyzeText, makeCheckAlert, makeSosAlert, mocks } from '../src/engine.js'
+import { makeCheckAlert, makeSosAlert, mocks } from '../src/engine.js'
+import { analyze } from './analyze.js'
+import { llmEnabled, llmModel } from './llm.js'
 import * as db from './store.js'
 import { raiseAlert, handleTelegram, setupWebhook, botUsername } from './telegram.js'
 
@@ -35,7 +37,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    if (m === 'GET' && path === '/health') return send(res, 200, { ok: true, storage: db.storage, telegram_bot: await botUsername().catch(() => null) })
+    if (m === 'GET' && path === '/health') return send(res, 200, { ok: true, storage: db.storage, llm: llmEnabled ? llmModel : null, telegram_bot: await botUsername().catch(() => null) })
 
     if (m === 'POST' && path === '/telegram') {
       const r = await handleTelegram(req, await readBody(req))
@@ -57,7 +59,7 @@ export default async function handler(req, res) {
       const text = (b.text || '').trim()
       if (!text) return fail(res, 400, 'EMPTY_TEXT', 'Текст сообщения пустой')
       if (text.length > 4000) return fail(res, 413, 'TEXT_TOO_LONG', 'Слишком длинный текст')
-      const r = analyzeText(text)
+      const r = await analyze(text)
       await db.incr('saqta:stats:checks')
       await db.incr(`saqta:stats:checks:${r.verdict}`)
       r.family_alert_sent = false

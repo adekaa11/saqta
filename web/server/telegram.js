@@ -2,7 +2,8 @@
 // Роли: «ата-ана» (присылает сообщения на проверку, жмёт SOS) и «бала» (получает тревоги).
 // Семью создаёт сын/дочь и отправляет родителю ссылку-приглашение t.me/<бот>?start=join_<id>.
 import { createHash } from 'node:crypto'
-import { analyzeText, makeCheckAlert, makeSosAlert } from '../src/engine.js'
+import { makeCheckAlert, makeSosAlert } from '../src/engine.js'
+import { analyze } from './analyze.js'
 import * as db from './store.js'
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
@@ -184,7 +185,7 @@ async function onMessage(msg) {
   if (!text) return send(chat, HELP)
   if (text.length > 4000) return send(chat, 'Мәтін тым ұзын. / Слишком длинный текст.')
 
-  const r = analyzeText(text)
+  const r = await analyze(text)
   await db.incr('saqta:stats:checks')
   await db.incr(`saqta:stats:checks:${r.verdict}`)
   let alerted = false
