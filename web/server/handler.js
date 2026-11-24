@@ -42,7 +42,7 @@ export default async function handler(req, res) {
       return send(res, r.status, r.body)
     }
     if (m === 'GET' && path === '/telegram/setup') {
-      const r = await setupWebhook(req.headers['x-forwarded-host'] || req.headers.host, url.searchParams.get('secret'))
+      const r = await setupWebhook()
       return send(res, r.status, r.body)
     }
 

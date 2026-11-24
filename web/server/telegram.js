@@ -1,11 +1,14 @@
 // Telegram-бот Saqta: тот же движок, что и сайт. Webhook: POST /api/telegram.
 // Роли: «ата-ана» (присылает сообщения на проверку, жмёт SOS) и «бала» (получает тревоги).
 // Семью создаёт сын/дочь и отправляет родителю ссылку-приглашение t.me/<бот>?start=join_<id>.
+import { createHash } from 'node:crypto'
 import { analyzeText, makeCheckAlert, makeSosAlert } from '../src/engine.js'
 import * as db from './store.js'
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
-const SECRET = process.env.TELEGRAM_WEBHOOK_SECRET
+// Секрет вебхука: Telegram шлёт его в заголовке каждого апдейта. Выводим из токена, чтобы хватало одной переменной.
+const SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || (TOKEN ? createHash('sha256').update('saqta:' + TOKEN).digest('hex').slice(0, 48) : null)
+const HOST = process.env.SITE_HOST || process.env.VERCEL_PROJECT_PRODUCTION_URL || 'saqta-delta.vercel.app'
 export const telegramEnabled = Boolean(TOKEN)
 
 async function tg(method, body) {
@@ -206,11 +209,11 @@ export async function handleTelegram(req, body) {
   return { status: 200, body: { ok: true } } // Telegram всегда получает 200, иначе будет повторять апдейт
 }
 
-// Один раз после деплоя: GET /api/telegram/setup?secret=<TELEGRAM_WEBHOOK_SECRET>
-export async function setupWebhook(host, secret) {
+// Один раз после деплоя: GET /api/telegram/setup. Безопасно вызывать повторно:
+// вебхук всегда ставится только на прод-домен Saqta, адрес из запроса не используется.
+export async function setupWebhook() {
   if (!TOKEN) return { status: 503, body: { error: { code: 'BOT_DISABLED', message: 'TELEGRAM_BOT_TOKEN не задан' } } }
-  if (!SECRET || secret !== SECRET) return { status: 401, body: { error: { code: 'BAD_SECRET', message: 'Неверный секрет' } } }
-  const hook = await tg('setWebhook', { url: `https://${host}/api/telegram`, secret_token: SECRET, allowed_updates: ['message', 'callback_query'] })
+  const hook = await tg('setWebhook', { url: `https://${HOST}/api/telegram`, secret_token: SECRET, allowed_updates: ['message', 'callback_query'] })
   await tg('setMyCommands', { commands: [{ command: 'start', description: 'Бастау / Начать' }, { command: 'sos', description: 'SOS — отбасына хабар / сигнал семье' }, { command: 'help', description: 'Көмек / Помощь' }] })
   return { status: 200, body: { webhook: hook, bot: await botUsername() } }
 }
