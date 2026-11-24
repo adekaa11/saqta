@@ -58,6 +58,29 @@ export async function getNum(k) {
   return Number(mem.get(k) || 0)
 }
 
+// --- журнал событий для метрик пилота (последние 5000) ---
+// Не храним тексты сообщений — только тип, вердикт, время.
+const EVENTS = 'saqta:events'
+export async function logEvent(e) {
+  const item = JSON.stringify({ t: new Date().toISOString(), ...e })
+  try {
+    if (storage === 'redis') {
+      await redis(['LPUSH', EVENTS, item])
+      await redis(['LTRIM', EVENTS, '0', '4999'])
+    } else {
+      const l = mem.get(EVENTS) || []
+      l.unshift(item)
+      mem.set(EVENTS, l.slice(0, 5000))
+    }
+  } catch (err) {
+    console.error('logEvent failed', err?.message)
+  }
+}
+export async function getEvents() {
+  const raw = storage === 'redis' ? (await redis(['LRANGE', EVENTS, '0', '4999'])) || [] : mem.get(EVENTS) || []
+  return raw.map((s) => { try { return JSON.parse(s) } catch { return null } }).filter(Boolean)
+}
+
 // --- алерты семьи ---
 const alertsKey = (fid) => `saqta:alerts:${fid}`
 export async function getAlerts(fid) {

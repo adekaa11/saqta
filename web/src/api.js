@@ -129,6 +129,38 @@ export async function resetDemo(familyId = FAMILY_ID) {
 
 export const demoMessages = mocks.demo_messages
 
+// Скриншот → текст на сервере. Картинку сжимаем в браузере, чтобы не гнать мегабайты.
+export async function ocrImage(file) {
+  if (USE_MOCK) throw new ApiError('OCR_OFFLINE', 'Скриншоты работают только с сервером', 0)
+  const { data, mime } = await shrinkImage(file)
+  const r = await http('POST', '/ocr', { image: data, mime })
+  return r.text || ''
+}
+
+function shrinkImage(file, max = 1600) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height))
+      const c = document.createElement('canvas')
+      c.width = Math.round(img.width * k)
+      c.height = Math.round(img.height * k)
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+      URL.revokeObjectURL(url)
+      resolve({ data: c.toDataURL('image/jpeg', 0.85).split(',')[1], mime: 'image/jpeg' })
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new ApiError('BAD_IMAGE', 'Не удалось открыть картинку', 0)) }
+    img.src = url
+  })
+}
+
+// Метрики пилота (страница #/stats)
+export async function getMetrics(since) {
+  if (USE_MOCK) throw new ApiError('OFFLINE', 'Метрики только с сервером', 0)
+  return http('GET', '/metrics' + (since ? '?since=' + encodeURIComponent(since) : ''))
+}
+
 // Имя Telegram-бота с сервера (null, если бот не настроен или режим моков)
 export async function getBotName() {
   if (USE_MOCK) return null

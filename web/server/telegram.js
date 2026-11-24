@@ -48,7 +48,8 @@ const elderKeyboard = { keyboard: [[{ text: SOS_LABEL }]], resize_keyboard: true
 // ---------- тревоги семье (общие для сайта и бота) ----------
 // Шлёт тревогу всем «бала» семьи и сохраняет её в ленту (её видит и страница #/family на сайте).
 // tg_delivery_ms — время от создания тревоги до ответа Telegram API (метрика «время до тревоги»).
-export async function raiseAlert(fid, alert) {
+// receivedAt — когда пришло исходное сообщение: total_ms = «время до тревоги» целиком (распознавание + анализ + доставка)
+export async function raiseAlert(fid, alert, receivedAt = null) {
   const started = Date.now()
   let delivered = 0
   if (TOKEN) {
@@ -64,6 +65,10 @@ export async function raiseAlert(fid, alert) {
   alert.tg_delivery_ms = delivered ? Date.now() - started : null
   await db.pushAlert(fid, alert)
   await db.incr('saqta:stats:alerts')
+  await db.logEvent({
+    type: 'alert', kind: alert.type, demo: fid === db.DEMO_FAMILY.family_id, delivered,
+    delivery_ms: alert.tg_delivery_ms, total_ms: receivedAt && delivered ? Date.now() - receivedAt : null
+  })
   return alert
 }
 
@@ -93,6 +98,8 @@ function verdictMessage(r, alerted) {
   return lines.join('\n')
 }
 
+const PRIVACY = 'Хабарламаларды Saqta жасанды интеллектісі тексереді. Өз құпиясөзіңізді, картаңыздың нөмірін және өзіңізге келген кодтарды жібермеңіз.\nСообщения проверяет искусственный интеллект Saqta. Не присылайте свои пароли, номер карты и пришедшие вам коды.'
+
 const HELP = 'Күдікті хабарламаны осында жіберіңіз — мәтінін, скриншотын немесе «Переслать». Қоңырау болса — дауыстық хабармен айтып беріңіз.\n' +
   'Пришлите сюда подозрительное сообщение — текстом, скриншотом или «Переслать». Был звонок — расскажите голосовым сообщением.'
 
@@ -109,10 +116,11 @@ async function onStart(msg, payload) {
     if (!fam) return send(chat, 'Сілтеме ескірген. / Ссылка недействительна — попросите новую.')
     await db.setJSON(userKey(chat), { role: 'elder', fid: join[1], name })
     await db.incr('saqta:stats:elders')
+    await db.logEvent({ type: 'elder_joined' })
     for (const w of await db.sMembers(watchersKey(join[1]))) {
       await send(w, `${esc(name)} Saqta-ға қосылды. Енді қауіп болса, сізге хабар келеді.\n${esc(name)} подключилась — при опасности вы получите тревогу.`).catch(() => null)
     }
-    return send(chat, `Сәлеметсіз бе, ${esc(name)}! Сіздің отбасыңыз қосылды.\nЗдравствуйте! Ваша семья подключена.\n\n${HELP}\n\nҚауіп төнсе — төмендегі SOS батырмасын басыңыз.\nЕсли страшно — нажмите SOS внизу.`, { reply_markup: elderKeyboard })
+    return send(chat, `Сәлеметсіз бе, ${esc(name)}! Сіздің отбасыңыз қосылды.\nЗдравствуйте! Ваша семья подключена.\n\n${HELP}\n\n${PRIVACY}\n\nҚауіп төнсе — төмендегі SOS батырмасын басыңыз.\nЕсли страшно — нажмите SOS внизу.`, { reply_markup: elderKeyboard })
   }
 
   if (watch) {
@@ -141,7 +149,7 @@ async function onCallback(q) {
   if (data === 'role:elder') {
     const u = await db.getJSON(userKey(chat))
     if (!u) await db.setJSON(userKey(chat), { role: 'elder', fid: null, name })
-    return send(chat, `${HELP}\n\nБалаңыз дабыл алуы үшін: ол осы ботты ашып, «Мен баламын» батырмасын бассын да, сізге сілтеме жіберсін.\nЧтобы сын или дочь получали тревоги: пусть откроет этого бота, нажмёт «Я сын или дочь» и пришлёт вам ссылку.`, { reply_markup: elderKeyboard })
+    return send(chat, `${HELP}\n\n${PRIVACY}\n\nБалаңыз дабыл алуы үшін: ол осы ботты ашып, «Мен баламын» батырмасын бассын да, сізге сілтеме жіберсін.\nЧтобы сын или дочь получали тревоги: пусть откроет этого бота, нажмёт «Я сын или дочь» и пришлёт вам ссылку.`, { reply_markup: elderKeyboard })
   }
 
   if (data === 'role:watcher') {
@@ -150,6 +158,7 @@ async function onCallback(q) {
     await db.sAdd(watchersKey(fid), chat)
     await db.setJSON(userKey(chat), { role: 'watcher', fid, name })
     await db.incr('saqta:stats:families')
+    await db.logEvent({ type: 'family_created' })
     const link = `https://t.me/${await botUsername()}?start=join_${fid}`
     await send(chat, 'Отбасы құрылды. Келесі хабарламаны анаңызға/әкеңізге жіберіңіз — ол сілтемені басса, болды.\nСемья создана. Перешлите следующее сообщение маме или папе — пусть нажмёт ссылку.')
     return send(chat, `Апа, мына сілтемені басыңыз — күдікті қоңырау не хабарлама болса, мен бірден көремін:\nНажмите на ссылку — если будет подозрительный звонок или сообщение, я сразу узнаю:\n${link}`)
@@ -165,6 +174,7 @@ async function onCallback(q) {
 }
 
 async function onMessage(msg) {
+  const receivedAt = Date.now()
   const chat = msg.chat.id
   const text = (msg.text || msg.caption || '').trim()
 
@@ -191,7 +201,7 @@ async function onMessage(msg) {
     if (got === null) return replace(chat, wait, 'Қазір тани алмадым — бір минуттан соң қайталаңыз немесе мәтінмен жазыңыз.\nНе получилось распознать — попробуйте через минуту или пришлите текстом.')
     const combined = [got, text].filter(Boolean).join('\n').trim() // подпись к фото тоже проверяем
     if (!combined) return replace(chat, wait, voice ? 'Сөз естілмеді — қайта жазып көріңіз.\nНе расслышал слов — запишите ещё раз.' : 'Скриншоттан хабарлама мәтінін таппадым.\nНа скриншоте не нашёл текста сообщения.')
-    return checkAndReply(chat, user, combined.slice(0, 4000), wait, voice ? 'Естігенім / Я услышал' : 'Скриншоттағы мәтін / Текст со скриншота')
+    return checkAndReply(chat, user, combined.slice(0, 4000), wait, voice ? 'Естігенім / Я услышал' : 'Скриншоттағы мәтін / Текст со скриншота', receivedAt, voice ? 'voice' : 'screenshot')
   }
   if (!text) return send(chat, HELP)
   if (text.length > 4000) return send(chat, 'Мәтін тым ұзын. / Слишком длинный текст.')
@@ -199,7 +209,7 @@ async function onMessage(msg) {
   // Сразу показываем, что бот работает: «печатает…» + сообщение, которое потом заменим вердиктом
   tg('sendChatAction', { chat_id: chat, action: 'typing' }).catch(() => null)
   const wait = await send(chat, 'Тексеріп жатырмын… / Проверяю…').catch(() => null)
-  return checkAndReply(chat, user, text, wait)
+  return checkAndReply(chat, user, text, wait, null, receivedAt, 'text')
 }
 
 async function downloadFile(file_id) {
@@ -224,15 +234,16 @@ async function replace(chat, wait, text, extra = {}) {
   return send(chat, text, extra)
 }
 
-async function checkAndReply(chat, user, text, wait, heardLabel) {
+async function checkAndReply(chat, user, text, wait, heardLabel, receivedAt = Date.now(), input = 'text') {
   const t0 = Date.now()
   const r = await analyze(text)
   r.elapsed_ms = Date.now() - t0
+  await db.logEvent({ type: 'check', src: 'bot', input, verdict: r.verdict, score: r.risk_score, engine: r.engine, ms: Date.now() - receivedAt, in_family: Boolean(user?.fid) })
   await db.incr('saqta:stats:checks')
   await db.incr(`saqta:stats:checks:${r.verdict}`)
   let alerted = false
   if (r.verdict === 'scam' && user?.role === 'elder' && user.fid) {
-    const alert = await raiseAlert(user.fid, makeCheckAlert(r, text, user.name))
+    const alert = await raiseAlert(user.fid, makeCheckAlert(r, text, user.name), receivedAt)
     alerted = alert.tg_delivered > 0
   }
   // При риске SOS — прямо под ответом: клавиатуру внизу Telegram часто прячет

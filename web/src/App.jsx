@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { LangCtx, STR } from './i18n'
 import Check from './pages/Check.jsx'
 import Family from './pages/Family.jsx'
+import Stats from './pages/Stats.jsx'
 import { resetDemo } from './api'
 import { SaqtaMark } from './components/Icons.jsx'
 import { Frame } from './components/Ornament.jsx'
@@ -79,11 +80,11 @@ export default function App() {
         </header>
 
         <main className="flex-1">
-          {route === 'family' ? <Family /> : <Check />}
+          {route === 'family' ? <Family /> : route === 'stats' ? <Stats /> : <Check />}
         </main>
 
         <footer className={`pb-36 pt-4 text-center text-lg text-ink-soft ${/[?&]clean=1/.test(window.location.href) ? "invisible" : ""}`}>
-          Демо-деректер ·{' '}
+          <a href="#/stats" className="underline underline-offset-4 hover:text-cobalt">{lang === 'kk' ? 'Пилот сандармен' : 'Пилот в цифрах'}</a> · Демо-деректер ·{' '}
           <button className="underline underline-offset-4 hover:text-cobalt" onClick={async () => { await resetDemo(); location.reload() }}>
             reset
           </button>

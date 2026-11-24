@@ -16,6 +16,9 @@ export const BellOffIcon = (p) => (
 export const AlertIcon = (p) => (
   <svg {...base} {...p}><path d="M12 3.5 2.5 20h19L12 3.5Z" /><path d="M12 10v4.5M12 17.5v.01" /></svg>
 )
+export const ImageIcon = (p) => (
+  <svg {...base} {...p}><rect x="3" y="4" width="18" height="16" rx="2.5" /><circle cx="9" cy="10" r="1.8" /><path d="m21 16-5-5-8.5 9" /></svg>
+)
 export const CheckIcon = (p) => (
   <svg {...base} {...p}><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
 )

@@ -64,6 +64,40 @@ export default async function handler(req, res) {
       return send(res, 200, { text, ms: Date.now() - t0 })
     }
 
+    // Метрики пилота из журнала событий: ?since=2026-11-25 (по умолчанию — PILOT_START или 25.11.2026).
+    // Мои тесты до старта пилота сюда не попадают.
+    if (m === 'GET' && path === '/metrics') {
+      const since = new Date(url.searchParams.get('since') || process.env.PILOT_START || '2026-11-25T00:00:00+05:00')
+      const ev = (await db.getEvents()).filter((e) => new Date(e.t) >= since)
+      const checks = ev.filter((e) => e.type === 'check')
+      const alerts = ev.filter((e) => e.type === 'alert' && !e.demo)
+      const med = (a) => { const s = a.filter((x) => typeof x === 'number').sort((x, y) => x - y); return s.length ? s[Math.floor((s.length - 1) / 2)] : null }
+      const p90 = (a) => { const s = a.filter((x) => typeof x === 'number').sort((x, y) => x - y); return s.length ? s[Math.min(s.length - 1, Math.floor(s.length * 0.9))] : null }
+      const count = (a, k) => a.reduce((o, e) => ((o[e[k] ?? '—'] = (o[e[k] ?? '—'] || 0) + 1), o), {})
+      return send(res, 200, {
+        since: since.toISOString(),
+        families_created: ev.filter((e) => e.type === 'family_created').length,
+        elders_joined: ev.filter((e) => e.type === 'elder_joined').length,
+        checks: {
+          total: checks.length,
+          by_verdict: count(checks, 'verdict'),
+          by_input: count(checks, 'input'),
+          by_src: count(checks, 'src'),
+          by_engine: count(checks, 'engine'),
+          median_ms: med(checks.map((e) => e.ms)),
+          p90_ms: p90(checks.map((e) => e.ms))
+        },
+        alerts: {
+          total: alerts.length,
+          by_kind: count(alerts, 'kind'),
+          delivered: alerts.filter((e) => e.delivered > 0).length,
+          median_total_ms: med(alerts.map((e) => e.total_ms)),
+          median_delivery_ms: med(alerts.map((e) => e.delivery_ms))
+        },
+        demo_alerts: ev.filter((e) => e.type === 'alert' && e.demo).length
+      })
+    }
+
     if (m === 'GET' && path === '/stats') {
       const keys = ['checks', 'checks:scam', 'checks:suspicious', 'checks:safe', 'alerts', 'families', 'elders']
       const vals = await Promise.all(keys.map((k) => db.getNum(`saqta:stats:${k}`)))
@@ -75,12 +109,14 @@ export default async function handler(req, res) {
       const text = (b.text || '').trim()
       if (!text) return fail(res, 400, 'EMPTY_TEXT', 'Текст сообщения пустой')
       if (text.length > 4000) return fail(res, 413, 'TEXT_TOO_LONG', 'Слишком длинный текст')
+      const t0 = Date.now()
       const r = await analyze(text)
       await db.incr('saqta:stats:checks')
       await db.incr(`saqta:stats:checks:${r.verdict}`)
+      await db.logEvent({ type: 'check', src: 'site', input: b.source === 'voice' || b.source === 'screenshot' ? b.source : 'text', verdict: r.verdict, score: r.risk_score, engine: r.engine, ms: Date.now() - t0 })
       r.family_alert_sent = false
       if (r.verdict === 'scam' && b.family_id && (await db.getFamily(b.family_id))) {
-        await raiseAlert(b.family_id, makeCheckAlert(r, text, b.member_name || 'Гүлнар апа'))
+        await raiseAlert(b.family_id, makeCheckAlert(r, text, b.member_name || 'Гүлнар апа'), t0)
         r.family_alert_sent = true
       }
       return send(res, 200, r)

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { analyze, sendSos, demoMessages, FAMILY_ID, MEMBER_NAME } from '../api'
+import { analyze, sendSos, ocrImage, demoMessages, FAMILY_ID, MEMBER_NAME } from '../api'
 import { useLang, FLAG_META } from '../i18n'
 import Gauge, { VERDICT_COLOR } from '../components/Gauge.jsx'
 import Highlighted, { orderFlags } from '../components/Highlighted.jsx'
@@ -8,15 +8,15 @@ import RimGlow from '../components/RimGlow.jsx'
 import Ornament from '../components/Ornament.jsx'
 import Reveal from '../components/Reveal.jsx'
 import useSpeech from '../components/useSpeech'
-import { MicIcon, PhoneIcon, AlertIcon, CheckIcon, ArrowRotateIcon } from '../components/Icons.jsx'
+import { MicIcon, PhoneIcon, AlertIcon, CheckIcon, ArrowRotateIcon, ImageIcon } from '../components/Icons.jsx'
 
 const SON_PHONE = 'tel:+77010000000' // демо-номер
 const ease = [0.16, 1, 0.3, 1]
 // Главная кнопка: кобальт с золотой внутренней линией
 const PRIMARY = 'bg-cobalt text-white shadow-[inset_0_0_0_3px_rgb(var(--cobalt)),inset_0_0_0_4.5px_rgb(var(--gold))] hover:bg-cobalt-press'
 
-function Spinner() {
-  return <span className="inline-block h-6 w-6 animate-spin rounded-full border-[3px] border-white/40 border-t-white" />
+function Spinner({ dark }) {
+  return <span className={`inline-block h-6 w-6 animate-spin rounded-full border-[3px] ${dark ? 'border-cobalt/30 border-t-cobalt' : 'border-white/40 border-t-white'}`} />
 }
 
 export default function Check() {
@@ -30,6 +30,28 @@ export default function Check() {
   const [active, setActive] = useState(null)
   const [sos, setSos] = useState('idle') // idle | sending | sent
   const [glow, setGlow] = useState(0)
+  const [shot, setShot] = useState(false) // читаем скриншот
+
+  const onShot = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setShot(true)
+    setErr(null)
+    if (state === 'error') setState('idle')
+    try {
+      const tx = (await ocrImage(file)).trim()
+      if (!tx) { setErr({ message: t.shotEmpty }); setState('error'); return }
+      setText(tx)
+      setSource('screenshot')
+      await run(tx, 'screenshot')
+    } catch {
+      setErr({ message: t.shotFail })
+      setState('error')
+    } finally {
+      setShot(false)
+    }
+  }
 
   const voiceDemo = demoMessages.find((d) => d.key === (lang === 'kk' ? 'voice_kk' : 'voice_ru'))
 
@@ -160,9 +182,13 @@ export default function Check() {
                   </button>
                 ))}
               </div>
+              <label className={`focus-ring mt-4 flex h-14 w-full cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-cobalt bg-porcelain-glaze text-xl font-black text-cobalt-deep transition-colors hover:bg-cobalt-tint ${shot || state === 'loading' ? 'pointer-events-none opacity-70' : ''}`}>
+                {shot ? <><Spinner dark />{t.shotReading}</> : <><ImageIcon className="h-7 w-7" />{t.shotBtn}</>}
+                <input type="file" accept="image/*" className="sr-only" onChange={onShot} disabled={shot || state === 'loading'} />
+              </label>
               <button
                 onClick={() => run()}
-                disabled={state === 'loading' || speech.listening}
+                disabled={state === 'loading' || speech.listening || shot}
                 className={`focus-ring mt-6 flex h-16 w-full items-center justify-center gap-3 rounded-xl text-[24px] font-black transition-colors disabled:opacity-70 ${PRIMARY}`}
               >
                 {state === 'loading' ? <><Spinner />{t.checking}</> : t.check}
