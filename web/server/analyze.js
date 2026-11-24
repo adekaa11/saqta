@@ -3,7 +3,7 @@
 // - Модель решает итоговый риск, НО «жёсткие» признаки из правил (код из SMS, безопасный счёт,
 //   удалённый доступ, «ошибочный перевод») не дают опустить риск ниже оценки правил.
 import { ruleAnalyze, SCHEMES } from '../src/engine.js'
-import { llmAnalyze, LLM_FLAG_TYPES, lastGeminiModel } from './llm.js'
+import { llmAnalyze, LLM_FLAG_TYPES, lastModel, llmEnabled } from './llm.js'
 
 const HARD = new Set(['sms_code', 'safe_account', 'remote_access', 'wrong_transfer'])
 const verdictOf = (s) => (s >= 70 ? 'scam' : s >= 40 ? 'suspicious' : 'safe')
@@ -21,7 +21,16 @@ function locate(text, quote) {
 export async function analyze(text) {
   const rules = ruleAnalyze(text)
   const llm = await llmAnalyze(text)
-  if (!llm || typeof llm.risk_score !== 'number') return rules
+  if (!llm || typeof llm.risk_score !== 'number') {
+    // Модель не ответила, а правила ничего не нашли — честно говорим, что проверка упрощённая
+    if (llmEnabled && rules.verdict === 'safe') {
+      rules.summary_ru = 'Явных признаков не нашли, но сейчас сработала только упрощённая проверка.'
+      rules.summary_kk = 'Анық белгілер табылмады, бірақ қазір тек жеңілдетілген тексеру жұмыс істеді.'
+      rules.advice_ru = ['Если просят код, деньги, данные карты или перейти по ссылке — это обман', 'Сомневаетесь — позвоните близким']
+      rules.advice_kk = ['Код, ақша, карта деректерін сұраса не сілтемеге өтуді айтса — бұл алдау', 'Күмәндансаңыз — жақындарыңызға хабарласыңыз']
+    }
+    return rules
+  }
 
   // Улики модели: только дословные цитаты, которые реально есть в тексте
   const taken = []
@@ -72,6 +81,6 @@ export async function analyze(text) {
     advice_ru: pickList('advice_ru'),
     advice_kk: pickList('advice_kk'),
     engine: raisedByRules ? 'llm+rules' : 'llm',
-    llm_model: lastGeminiModel || undefined
+    llm_model: lastModel || undefined
   }
 }

@@ -185,7 +185,12 @@ async function onMessage(msg) {
   if (!text) return send(chat, HELP)
   if (text.length > 4000) return send(chat, 'Мәтін тым ұзын. / Слишком длинный текст.')
 
+  // Сразу показываем, что бот работает: «печатает…» + сообщение, которое потом заменим вердиктом
+  tg('sendChatAction', { chat_id: chat, action: 'typing' }).catch(() => null)
+  const wait = await send(chat, 'Тексеріп жатырмын… / Проверяю…').catch(() => null)
+  const t0 = Date.now()
   const r = await analyze(text)
+  r.elapsed_ms = Date.now() - t0
   await db.incr('saqta:stats:checks')
   await db.incr(`saqta:stats:checks:${r.verdict}`)
   let alerted = false
@@ -194,9 +199,15 @@ async function onMessage(msg) {
     alerted = alert.tg_delivered > 0
   }
   // При риске SOS — прямо под ответом: клавиатуру внизу Telegram часто прячет
-  const markup = user?.role === 'elder' && user.fid && r.verdict !== 'safe' ? { inline_keyboard: [[{ text: SOS_LABEL, callback_data: 'sos' }]] }
-    : user?.role === 'elder' ? elderKeyboard : undefined
-  return send(chat, verdictMessage(r, alerted), markup ? { reply_markup: markup } : {})
+  const sosButton = user?.role === 'elder' && user.fid && r.verdict !== 'safe' ? { inline_keyboard: [[{ text: SOS_LABEL, callback_data: 'sos' }]] } : undefined
+  const body = verdictMessage(r, alerted)
+  const msgId = wait?.ok && wait.result?.message_id
+  if (msgId) {
+    const ed = await tg('editMessageText', { chat_id: chat, message_id: msgId, text: body, parse_mode: 'HTML', disable_web_page_preview: true, ...(sosButton ? { reply_markup: sosButton } : {}) }).catch(() => null)
+    if (ed?.ok) return ed
+  }
+  const markup = sosButton || (user?.role === 'elder' ? elderKeyboard : undefined)
+  return send(chat, body, markup ? { reply_markup: markup } : {})
 }
 
 async function sendSos(chat, user) {

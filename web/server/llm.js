@@ -1,13 +1,12 @@
 // Анализ по смыслу языковой моделью (бесплатные тарифы).
-// Провайдер выбирается по ключу: GEMINI_API_KEY (Google, приоритет) или GROQ_API_KEY.
-// Без ключа или при ошибке возвращает null — тогда работают одни правила.
+// Цепочка: Gemini (Google) → Groq (запасной, другие серверы) → null, и тогда работают одни правила.
+// Каждый провайдер включается своим ключом: GEMINI_API_KEY, GROQ_API_KEY.
 const GEMINI_KEY = process.env.GEMINI_API_KEY
 const GROQ_KEY = process.env.GROQ_API_KEY
-const PROVIDER = GEMINI_KEY ? 'gemini' : GROQ_KEY ? 'groq' : null
-const MODEL = PROVIDER === 'gemini' ? process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
-  : process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
-export const llmEnabled = Boolean(PROVIDER)
-export const llmModel = PROVIDER ? `${PROVIDER}:${MODEL}` : null
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
+const GROQ_MODELS = [...new Set([process.env.GROQ_MODEL || 'llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'meta-llama/llama-4-scout-17b-16e-instruct'])]
+export const llmEnabled = Boolean(GEMINI_KEY || GROQ_KEY)
+export const llmModel = [GEMINI_KEY && `gemini:${MODEL}`, GROQ_KEY && `groq:${GROQ_MODELS[0]}`].filter(Boolean).join(' → ') || null
 
 export const LLM_FLAG_TYPES = ['sms_code', 'safe_account', 'remote_access', 'authority', 'payment_request', 'personal_data', 'urgency', 'link', 'too_good', 'wrong_transfer', 'other']
 export const LLM_SCHEMES = ['fake_bank', 'safe_account', 'fake_gov', 'wrong_transfer', 'relative', 'prize', 'marketplace', 'investment', 'other', 'none']
@@ -57,27 +56,35 @@ function parseJSON(s) {
   return null
 }
 
-// Бесплатные модели Gemini бывают перегружены (503) или упираются в лимит (429) —
-// тогда пробуем следующую. Первая — из GEMINI_MODEL, если задана.
-// (gemini-2.5-* закрыты для новых ключей — Google сам отправляет на 3.5)
-// Сначала быстрые lite (~2–3 с), полная flash думает ~10 с — только запасной вариант
-const GEMINI_CHAIN = [...new Set([MODEL, 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.5-flash', 'gemini-flash-latest'])]
-export let lastGeminiModel = null
+// Бесплатные модели Gemini бывают перегружены (503) или упираются в лимит (429) — тогда пробуем следующую.
+// gemini-2.5-* закрыты для новых ключей; flash-latest быстро упирается в квоту (429).
+// Если есть Groq — у Gemini короткая попытка, дальше быстрее спросить Groq, чем ждать медленную flash.
+const GEMINI_ATTEMPTS = GROQ_KEY
+  ? [{ model: MODEL, ms: 4000 }, { model: 'gemini-flash-lite-latest', ms: 4000 }]
+  : [{ model: MODEL, ms: 5000 }, { model: 'gemini-flash-lite-latest', ms: 5000 }, { model: MODEL, ms: 5000, pause: 600 }, { model: 'gemini-3.5-flash', ms: 9000 }]
+export let lastModel = null
 
-async function callGemini(text, signal) {
+const noThinkingCfg = new Set() // модели, которые не принимают thinkingConfig
+const retryable = (e) => e.name === 'TimeoutError' || e.name === 'AbortError' || /http (400|404|429|500|502|503)/.test(e.message)
+
+async function tryInOrder(attempts, call, signal) {
   let lastErr
-  for (const model of GEMINI_CHAIN) {
+  for (const { model, ms, pause } of attempts) {
+    if (pause) await new Promise((r) => setTimeout(r, pause))
+    if (signal.aborted) break
+    const t0 = Date.now()
     try {
-      const out = await callGeminiModel(model, text, signal)
-      lastGeminiModel = model
+      const out = await call(model, AbortSignal.any([signal, AbortSignal.timeout(ms)]))
+      lastModel = model
+      console.log('llm ok', model, Date.now() - t0, 'ms')
       return out
     } catch (e) {
       lastErr = e
-      if (signal.aborted || !/http (404|429|500|503)/.test(e.message)) throw e
-      console.error('gemini fallback', model, e.message.slice(0, 80))
+      if (signal.aborted || !retryable(e)) throw e
+      console.error('llm fallback', model, Date.now() - t0, 'ms', e.name, String(e.message).slice(0, 80))
     }
   }
-  throw lastErr
+  throw lastErr || new Error('aborted')
 }
 
 export async function listGeminiModels() {
@@ -88,32 +95,50 @@ export async function listGeminiModels() {
 }
 
 async function callGeminiModel(model, text, signal) {
+  // Для проверки сообщения долгое «рассуждение» не нужно — просим минимум, это сильно быстрее
+  const thinking = !noThinkingCfg.has(model)
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     signal,
     headers: { 'x-goog-api-key': GEMINI_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: SYSTEM }] },
-      contents: [{ role: 'user', parts: [{ text: `Текст для проверки:\n"""\n${text}\n"""` }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 4000, responseMimeType: 'application/json' }
+      contents: [{ role: 'user', parts: [{ text: `Текст для проверки:
+"""
+${text}
+"""` }] }],
+      generationConfig: {
+        temperature: 0.1, maxOutputTokens: 4000, responseMimeType: 'application/json',
+        ...(thinking ? { thinkingConfig: { thinkingLevel: 'minimal' } } : {})
+      }
     })
   })
-  if (!r.ok) throw new Error(`gemini http ${r.status}: ${(await r.text()).slice(0, 300)}`)
+  if (!r.ok) {
+    const body = (await r.text()).slice(0, 300)
+    if (thinking && r.status === 400 && /thinking/i.test(body)) {
+      noThinkingCfg.add(model) // модель не знает этот параметр — повторяем без него
+      return callGeminiModel(model, text, signal)
+    }
+    throw new Error(`gemini http ${r.status}: ${body}`)
+  }
   const j = await r.json()
   return parseJSON(j.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join(''))
 }
 
-async function callGroq(text, signal) {
+async function callGroqModel(model, text, signal) {
   const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     signal,
     headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       temperature: 0.1,
-      max_tokens: 1000,
+      max_tokens: 1500,
       response_format: { type: 'json_object' },
-      messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: `Текст для проверки:\n"""\n${text}\n"""` }]
+      messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: `Текст для проверки:
+"""
+${text}
+"""` }]
     })
   })
   if (!r.ok) throw new Error(`groq http ${r.status}: ${(await r.text()).slice(0, 300)}`)
@@ -122,13 +147,20 @@ async function callGroq(text, signal) {
 }
 
 export async function llmAnalyze(text, { timeoutMs = 15000 } = {}) {
-  if (!PROVIDER) return null
+  if (!llmEnabled) return null
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
-    return await (PROVIDER === 'gemini' ? callGemini : callGroq)(text, ctrl.signal)
+    if (GEMINI_KEY) {
+      try {
+        return await tryInOrder(GEMINI_ATTEMPTS, (m, sig) => callGeminiModel(m, text, sig), ctrl.signal)
+      } catch (e) {
+        if (!GROQ_KEY || ctrl.signal.aborted) throw e
+      }
+    }
+    return await tryInOrder(GROQ_MODELS.map((model) => ({ model, ms: 6000 })), (m, sig) => callGroqModel(m, text, sig), ctrl.signal)
   } catch (e) {
-    console.error('llm failed', PROVIDER, e?.name, e?.message)
+    console.error('llm failed', e?.name, e?.message)
     return null
   } finally {
     clearTimeout(timer)
