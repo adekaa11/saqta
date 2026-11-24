@@ -1,0 +1,8 @@
+node_modules/
+dist/
+web/deploy/
+.vercel/
+.env
+.env.local
+.env.*.local
+.claude/settings.local.json

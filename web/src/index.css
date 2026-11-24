@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Светлая тема — фарфор при дневном свете */
+:root {
+  --ink: 17 26 59;
+  --ink-soft: 44 55 102;
+  --porcelain: 251 248 241;
+  --porcelain-deep: 243 237 224;
+  --porcelain-glaze: 255 253 248;
+  --cobalt: 21 48 140;
+  --cobalt-deep: 12 31 99;
+  --cobalt-press: 12 31 99;
+  --cobalt-tint: 228 232 244;
+  --gold: 184 144 30;
+  --gold-soft: 231 212 154;
+  --gold-deep: 122 94 14;
+  --scam: 194 40 26;
+  --scam-tint: 251 232 228;
+  --warn: 138 78 0;
+  --warn-tint: 251 239 217;
+  --safe: 27 106 61;
+  --safe-tint: 226 241 232;
+  --shadow: 12 31 99;
+  color-scheme: light;
+}
+
+html { -webkit-text-size-adjust: 100%; scrollbar-color: rgb(var(--cobalt)) rgb(var(--porcelain-deep)); }
+body {
+  @apply bg-porcelain text-ink font-sans antialiased;
+  font-size: 18px;
+  caret-color: rgb(var(--cobalt));
+}
+::selection { background: rgb(var(--cobalt)); color: #fff; }
+::-webkit-scrollbar { width: 10px; }
+::-webkit-scrollbar-track { background: rgb(var(--porcelain-deep)); }
+::-webkit-scrollbar-thumb { background: rgb(var(--cobalt)); border-radius: 10px; border: 2px solid rgb(var(--porcelain-deep)); }
+
+@layer components {
+  /* Роспись: кобальтовая сетка с золотыми точками на фарфоре. Только для краёв. */
+  .net {
+    background-color: rgb(var(--porcelain));
+    background-image:
+      radial-gradient(circle, rgb(var(--gold)) 1.4px, transparent 1.9px),
+      repeating-linear-gradient(45deg, transparent 0 7px, rgb(var(--cobalt)) 7px 8.2px),
+      repeating-linear-gradient(-45deg, transparent 0 7px, rgb(var(--cobalt)) 7px 8.2px);
+    background-size: 11.03px 11.03px, auto, auto;
+    background-position: 5.5px 0, 0 0, 0 0;
+  }
+  .focus-ring { @apply focus:outline-none focus-visible:ring-4 focus-visible:ring-gold focus-visible:ring-offset-2 focus-visible:ring-offset-porcelain; }
+  .num { @apply inline-grid shrink-0 place-items-center rounded-full font-extrabold tabular-nums leading-none; }
+}
+
+/* Бордюр экрана: кобальтовая линия → полоса сетки → золотой ободок */
+.frame { position: fixed; inset: 0; pointer-events: none; z-index: 45; border: 2px solid rgb(var(--cobalt-press)); }
+.frame-net {
+  position: absolute; inset: 0; padding: 10px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+.frame-gold { position: absolute; inset: 11px; border: 1.5px solid rgb(var(--gold)); }
+
+
+button { -webkit-tap-highlight-color: transparent; }
+mark { color: inherit; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
