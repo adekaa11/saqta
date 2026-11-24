@@ -87,6 +87,13 @@ export async function tryInOrder(attempts, call, signal) {
   throw lastErr || new Error('aborted')
 }
 
+export async function listGroqModels() {
+  if (!GROQ_KEY) return null
+  const r = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: 'Bearer ' + GROQ_KEY } })
+  const j = await r.json()
+  return (j.data || []).map((m) => m.id).sort()
+}
+
 export async function listGeminiModels() {
   if (!GEMINI_KEY) return null
   const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': GEMINI_KEY } })

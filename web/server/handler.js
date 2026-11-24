@@ -1,7 +1,8 @@
 // Saqta API — одна функция Vercel на все /api/* (контракт из PLAN.md, раздел 5).
 import { makeCheckAlert, makeSosAlert, mocks } from '../src/engine.js'
 import { analyze } from './analyze.js'
-import { llmEnabled, llmModel, listGeminiModels } from './llm.js'
+import { readImage } from './media.js'
+import { llmEnabled, llmModel, listGeminiModels, listGroqModels } from './llm.js'
 import * as db from './store.js'
 import { raiseAlert, handleTelegram, setupWebhook, botUsername } from './telegram.js'
 
@@ -48,7 +49,20 @@ export default async function handler(req, res) {
       return send(res, r.status, r.body)
     }
 
-    if (m === 'GET' && path === '/llm/models') return send(res, 200, { models: await listGeminiModels() })
+    if (m === 'GET' && path === '/llm/models') return send(res, 200, { gemini: await listGeminiModels(), groq: await listGroqModels() })
+
+    // Скриншот → текст (сайт и проверки). Тело: { image: base64, mime }
+    if (m === 'POST' && path === '/ocr') {
+      const b = await readBody(req)
+      const mime = /^image\/(png|jpe?g|webp|heic)$/.test(b.mime || '') ? b.mime : null
+      if (!b.image || !mime) return fail(res, 400, 'BAD_IMAGE', 'Нужны image (base64) и mime (image/png, image/jpeg, image/webp)')
+      const buf = Buffer.from(b.image, 'base64')
+      if (buf.length > 4e6) return fail(res, 413, 'IMAGE_TOO_BIG', 'Картинка больше 4 МБ')
+      const t0 = Date.now()
+      const text = await readImage(buf, mime)
+      if (text === null) return fail(res, 503, 'OCR_UNAVAILABLE', 'Не удалось распознать, попробуйте через минуту')
+      return send(res, 200, { text, ms: Date.now() - t0 })
+    }
 
     if (m === 'GET' && path === '/stats') {
       const keys = ['checks', 'checks:scam', 'checks:suspicious', 'checks:safe', 'alerts', 'families', 'elders']

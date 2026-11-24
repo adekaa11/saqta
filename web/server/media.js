@@ -6,9 +6,9 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY
 const GROQ_KEY = process.env.GROQ_API_KEY
 const LITE = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
 const GEMINI_MEDIA = [
-  { model: LITE, ms: 9000 },
-  { model: 'gemini-flash-lite-latest', ms: 9000 },
-  ...(GROQ_KEY ? [] : [{ model: LITE, ms: 9000, pause: 700 }])
+  { model: LITE, ms: 8000 },
+  { model: 'gemini-flash-lite-latest', ms: 7000 },
+  { model: 'gemini-3.5-flash', ms: 12000 }
 ]
 
 const TRANSCRIBE = 'Это голосовое сообщение пожилого человека из Казахстана: он пересказывает звонок или читает сообщение (казахский, русский или смесь). Расшифруй речь дословно на языке оригинала, без комментариев, пояснений и кавычек. Если речи не слышно — ответь пустой строкой.'
@@ -16,17 +16,28 @@ const OCR = 'Это скриншот переписки, SMS или письма
 
 const clean = (s) => String(s || '').replace(/^```\w*\s*|\s*```$/g, '').replace(/^["«]|["»]$/g, '').trim()
 
+const noThinkingCfg = new Set()
+
 async function geminiMedia(model, prompt, buf, mime, signal) {
+  // Расшифровке и чтению текста «рассуждение» не нужно — без него в разы быстрее
+  const thinking = !noThinkingCfg.has(model)
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     signal,
     headers: { 'x-goog-api-key': GEMINI_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }, { inline_data: { mime_type: mime, data: buf.toString('base64') } }] }],
-      generationConfig: { temperature: 0, maxOutputTokens: 3000 }
+      generationConfig: { temperature: 0, maxOutputTokens: 3000, ...(thinking ? { thinkingConfig: { thinkingLevel: 'minimal' } } : {}) }
     })
   })
-  if (!r.ok) throw new Error(`gemini http ${r.status}: ${(await r.text()).slice(0, 300)}`)
+  if (!r.ok) {
+    const body = (await r.text()).slice(0, 300)
+    if (thinking && r.status === 400 && /thinking/i.test(body)) {
+      noThinkingCfg.add(model)
+      return geminiMedia(model, prompt, buf, mime, signal)
+    }
+    throw new Error(`gemini http ${r.status}: ${body}`)
+  }
   const j = await r.json()
   return clean(j.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join(''))
 }
@@ -58,7 +69,7 @@ async function groqVision(model, buf, mime, signal) {
 }
 
 async function run(geminiPrompt, groqCall, groqModels, buf, mime) {
-  const signal = AbortSignal.timeout(20000)
+  const signal = AbortSignal.timeout(28000)
   if (GEMINI_KEY) {
     try {
       return await tryInOrder(GEMINI_MEDIA, (m, sig) => geminiMedia(m, geminiPrompt, buf, mime, sig), signal)
@@ -81,7 +92,7 @@ export async function transcribe(buf, mime = 'audio/ogg') {
 }
 
 export async function readImage(buf, mime = 'image/jpeg') {
-  try { return await run(OCR, groqVision, ['meta-llama/llama-4-scout-17b-16e-instruct', 'meta-llama/llama-4-maverick-17b-128e-instruct'], buf, mime) } catch (e) {
+  try { return await run(OCR, groqVision, ['qwen/qwen3.8-27b'] /* llama-4 vision у Groq больше нет */, buf, mime) } catch (e) {
     console.error('ocr failed', e?.message)
     return null
   }
