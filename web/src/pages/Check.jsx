@@ -7,7 +7,8 @@ import Highlighted, { orderFlags } from '../components/Highlighted.jsx'
 import RimGlow from '../components/RimGlow.jsx'
 import Ornament from '../components/Ornament.jsx'
 import Reveal from '../components/Reveal.jsx'
-import useSpeech from '../components/useSpeech'
+import useSpeech, { FORCE_DEMO } from '../components/useSpeech'
+import useRecorder from '../components/useRecorder'
 import { MicIcon, PhoneIcon, AlertIcon, CheckIcon, ArrowRotateIcon, ImageIcon } from '../components/Icons.jsx'
 
 const SON_PHONE = 'tel:+77010000000' // демо-номер
@@ -74,11 +75,12 @@ export default function Check() {
     }
   }
 
-  const speech = useSpeech({
-    lang,
-    demoText: voiceDemo?.text || '',
-    onDone: (tx) => { setText(tx); setSource('voice'); run(tx, 'voice') }
-  })
+  // Голос: запись → расшифровка на сервере (работает в любом браузере, понимает казахский).
+  // Режим ?demo=1 (печатает заготовку) оставлен только для старых видео — во 2-м туре не используем.
+  const onVoice = (tx) => { setText(tx); setSource('voice'); run(tx, 'voice') }
+  const speech = FORCE_DEMO
+    ? useSpeech({ lang, demoText: voiceDemo?.text || '', onDone: onVoice }) // eslint-disable-line react-hooks/rules-of-hooks
+    : useRecorder({ onDone: onVoice }) // eslint-disable-line react-hooks/rules-of-hooks
 
   const onSos = async () => {
     if (sos === 'sending') return
@@ -121,7 +123,7 @@ export default function Check() {
                 )}
                 <button
                   onClick={speech.listening ? speech.stop : speech.start}
-                  disabled={state === 'loading'}
+                  disabled={state === 'loading' || speech.busy}
                   className={`focus-ring relative grid h-[184px] w-[184px] place-items-center rounded-full text-white shadow-kese transition-[transform,background-color] duration-200 active:scale-95 disabled:opacity-60 ${speech.listening ? 'bg-cobalt-press' : 'bg-cobalt hover:bg-cobalt-press'}`}
                   aria-label={speech.listening ? t.micStop : t.micIdle}
                 >
@@ -143,10 +145,10 @@ export default function Check() {
               </p>
 
               <AnimatePresence>
-                {(speech.listening || (speech.transcript && state === 'loading')) && (
+                {(speech.listening || speech.busy || (speech.transcript && state === 'loading')) && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="w-full overflow-hidden">
                     <p className="mt-6 min-h-[4rem] rounded-2xl border-2 border-cobalt bg-porcelain-glaze px-5 py-4 text-left text-[21px] leading-relaxed text-ink">
-                      {speech.transcript || '…'}
+                      {speech.transcript || (speech.busy ? t.micBusy : speech.listening && speech.seconds !== undefined ? `● ${Math.floor(speech.seconds / 60)}:${String(speech.seconds % 60).padStart(2, '0')}` : '…')}
                       {speech.listening && <span className="ml-1 inline-block h-6 w-[3px] translate-y-1 animate-pulse rounded bg-cobalt" />}
                     </p>
                     {speech.listening && (

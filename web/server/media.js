@@ -44,9 +44,12 @@ async function geminiMedia(model, prompt, buf, mime, signal) {
 
 async function groqWhisper(model, buf, mime, signal) {
   const form = new FormData()
-  form.append('file', new Blob([buf], { type: mime }), mime.includes('ogg') ? 'voice.ogg' : 'voice.mp3')
+  const ext = mime.includes('ogg') ? 'ogg' : mime.includes('webm') ? 'webm' : mime.includes('mp4') || mime.includes('m4a') || mime.includes('aac') ? 'm4a' : mime.includes('wav') ? 'wav' : 'mp3'
+  form.append('file', new Blob([buf], { type: mime }), 'voice.' + ext)
   form.append('model', model)
   form.append('temperature', '0')
+  // Подсказка словаря: банки, коды и казахские слова распознаются точнее
+  form.append('prompt', 'Kaspi, Halyk, Jusan, SMS-код, банк, перевод, қоңырау, ақша, кодты айтыңыз, карта.')
   const r = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST', signal, headers: { Authorization: `Bearer ${GROQ_KEY}` }, body: form
   })
@@ -68,24 +71,27 @@ async function groqVision(model, buf, mime, signal) {
   return clean((await r.json()).choices?.[0]?.message?.content)
 }
 
-async function run(geminiPrompt, groqCall, groqModels, buf, mime) {
+// groqFirst — для записи из браузера (webm/mp4): Whisper в Groq понимает эти форматы напрямую и отвечает за ~1 с.
+// Gemini аудио в webm/mp4 принимает только как «видео», поэтому для него подменяем тип.
+async function run(geminiPrompt, groqCall, groqModels, buf, mime, { groqFirst = false } = {}) {
   const signal = AbortSignal.timeout(28000)
-  if (GEMINI_KEY) {
-    try {
-      return await tryInOrder(GEMINI_MEDIA, (m, sig) => geminiMedia(m, geminiPrompt, buf, mime, sig), signal)
-    } catch (e) {
-      if (!GROQ_KEY || signal.aborted) throw e
-    }
+  const geminiMime = mime.includes('webm') ? 'video/webm' : /mp4|m4a/.test(mime) ? 'video/mp4' : mime
+  const viaGemini = () => tryInOrder(GEMINI_MEDIA, (m, sig) => geminiMedia(m, geminiPrompt, buf, geminiMime, sig), signal)
+  const viaGroq = () => tryInOrder(groqModels.map((model) => ({ model, ms: 9000 })), (m, sig) => groqCall(m, buf, mime, sig), signal)
+  const order = (groqFirst ? [GROQ_KEY && viaGroq, GEMINI_KEY && viaGemini] : [GEMINI_KEY && viaGemini, GROQ_KEY && viaGroq]).filter(Boolean)
+  if (!order.length) throw new Error('no media provider')
+  let lastErr
+  for (const step of order) {
+    try { return await step() } catch (e) { lastErr = e; if (signal.aborted) break }
   }
-  if (!GROQ_KEY) throw new Error('no media provider')
-  return tryInOrder(groqModels.map((model) => ({ model, ms: 9000 })), (m, sig) => groqCall(m, buf, mime, sig), signal)
+  throw lastErr
 }
 
 export const mediaEnabled = Boolean(GEMINI_KEY || GROQ_KEY)
 
 // null — не удалось распознать (сеть/лимиты); '' — распознано, но речи/текста нет
 export async function transcribe(buf, mime = 'audio/ogg') {
-  try { return await run(TRANSCRIBE, groqWhisper, ['whisper-large-v3-turbo', 'whisper-large-v3'], buf, mime) } catch (e) {
+  try { return await run(TRANSCRIBE, groqWhisper, ['whisper-large-v3-turbo', 'whisper-large-v3'], buf, mime, { groqFirst: /webm|mp4|m4a/.test(mime) }) } catch (e) {
     console.error('transcribe failed', e?.message)
     return null
   }

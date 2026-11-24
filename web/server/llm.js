@@ -4,7 +4,7 @@
 const GEMINI_KEY = process.env.GEMINI_API_KEY
 const GROQ_KEY = process.env.GROQ_API_KEY
 const MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
-const GROQ_MODELS = [...new Set([process.env.GROQ_MODEL || 'openai/gpt-oss-120b', 'meta-llama/llama-4-scout-17b-16e-instruct'])]
+const GROQ_MODELS = [...new Set([process.env.GROQ_MODEL || 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'])] // llama-3.3 и llama-4 Groq снял
 export const llmEnabled = Boolean(GEMINI_KEY || GROQ_KEY)
 export const llmModel = [GEMINI_KEY && `gemini:${MODEL}`, GROQ_KEY && `groq:${GROQ_MODELS[0]}`].filter(Boolean).join(' → ') || null
 
@@ -132,7 +132,11 @@ ${text}
   return parseJSON(j.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join(''))
 }
 
-async function callGroqModel(model, text, signal) {
+const noReasoningCfg = new Set()
+
+async function callGroqModel(model, text, signal, strictJson = true) {
+  // gpt-oss — «рассуждающая» модель; для проверки сообщения хватает низкого уровня, это в разы быстрее
+  const lowReasoning = model.startsWith('openai/gpt-oss') && !noReasoningCfg.has(model)
   const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     signal,
@@ -141,16 +145,59 @@ async function callGroqModel(model, text, signal) {
       model,
       temperature: 0.1,
       max_tokens: 1500,
-      response_format: { type: 'json_object' },
+      ...(lowReasoning ? { reasoning_effort: 'low' } : {}),
+      ...(strictJson ? { response_format: { type: 'json_object' } } : {}),
       messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: `Текст для проверки:
 """
 ${text}
 """` }]
     })
   })
-  if (!r.ok) throw new Error(`groq http ${r.status}: ${(await r.text()).slice(0, 300)}`)
+  if (!r.ok) {
+    const body = (await r.text()).slice(0, 300)
+    if (lowReasoning && r.status === 400 && /reasoning/i.test(body)) {
+      noReasoningCfg.add(model) // модель не знает параметр — повторяем без него
+      return callGroqModel(model, text, signal, strictJson)
+    }
+    // Строгий JSON-режим иногда «не собирается» (например, если в тексте мошенника есть фейковые JSON-команды) —
+    // повторяем без него и достаём JSON из ответа сами
+    if (strictJson && r.status === 400 && /json/i.test(body)) return callGroqModel(model, text, signal, false)
+    throw new Error(`groq http ${r.status}: ${body}`)
+  }
   const j = await r.json()
-  return parseJSON(j.choices?.[0]?.message?.content)
+  const out = parseJSON(j.choices?.[0]?.message?.content)
+  if (!out || typeof out.risk_score !== 'number') throw new Error('groq http 500: bad json')
+  return out
+}
+
+// «Страховочный» параллельный запрос: если Gemini молчит дольше HEDGE_MS (перегружен),
+// параллельно спрашиваем Groq и берём первый готовый ответ, проигравший запрос отменяем.
+const HEDGE_MS = 1500
+
+function hedged(gem, groq, abortGem, abortGroq) {
+  return new Promise((resolve, reject) => {
+    let pending = 2
+    let groqStarted = false
+    let settled = false
+    const win = (v, who) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      ;(who === 'gemini' ? abortGroq : abortGem)()
+      resolve(v)
+    }
+    const fail = (e) => { if (--pending === 0 && !settled) reject(e) }
+    const startGroq = () => {
+      if (groqStarted) return
+      groqStarted = true
+      groq().then((v) => (v ? win(v, 'groq') : fail(new Error('empty'))), fail)
+    }
+    const timer = setTimeout(startGroq, HEDGE_MS)
+    gem().then(
+      (v) => (v ? win(v, 'gemini') : (clearTimeout(timer), startGroq(), fail(new Error('empty')))),
+      (e) => { clearTimeout(timer); startGroq(); fail(e) }
+    )
+  })
 }
 
 export async function llmAnalyze(text, { timeoutMs = 15000 } = {}) {
@@ -158,6 +205,15 @@ export async function llmAnalyze(text, { timeoutMs = 15000 } = {}) {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
+    if (GEMINI_KEY && GROQ_KEY) {
+      const gemCtrl = new AbortController()
+      const groqCtrl = new AbortController()
+      return await hedged(
+        () => tryInOrder(GEMINI_ATTEMPTS, (m, sig) => callGeminiModel(m, text, sig), AbortSignal.any([ctrl.signal, gemCtrl.signal])),
+        () => tryInOrder(GROQ_MODELS.map((model) => ({ model, ms: 6000 })), (m, sig) => callGroqModel(m, text, sig), AbortSignal.any([ctrl.signal, groqCtrl.signal])),
+        () => gemCtrl.abort(), () => groqCtrl.abort()
+      )
+    }
     if (GEMINI_KEY) {
       try {
         return await tryInOrder(GEMINI_ATTEMPTS, (m, sig) => callGeminiModel(m, text, sig), ctrl.signal)

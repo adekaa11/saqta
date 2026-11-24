@@ -1,7 +1,7 @@
 // Saqta API — одна функция Vercel на все /api/* (контракт из PLAN.md, раздел 5).
 import { makeCheckAlert, makeSosAlert, mocks } from '../src/engine.js'
 import { analyze } from './analyze.js'
-import { readImage } from './media.js'
+import { readImage, transcribe } from './media.js'
 import { llmEnabled, llmModel, listGeminiModels, listGroqModels } from './llm.js'
 import * as db from './store.js'
 import { raiseAlert, handleTelegram, setupWebhook, botUsername } from './telegram.js'
@@ -50,6 +50,19 @@ export default async function handler(req, res) {
     }
 
     if (m === 'GET' && path === '/llm/models') return send(res, 200, { gemini: await listGeminiModels(), groq: await listGroqModels() })
+
+    // Голос с сайта → текст. Тело: { audio: base64, mime } (запись MediaRecorder: webm / mp4 / ogg)
+    if (m === 'POST' && path === '/transcribe') {
+      const b = await readBody(req)
+      const mime = String(b.mime || '').split(';')[0]
+      if (!b.audio || !/^audio\/(webm|mp4|ogg|mpeg|wav|aac|x-m4a)$|^video\/(webm|mp4)$/.test(mime)) return fail(res, 400, 'BAD_AUDIO', 'Нужны audio (base64) и mime (audio/webm, audio/mp4, audio/ogg)')
+      const buf = Buffer.from(b.audio, 'base64')
+      if (buf.length > 4e6) return fail(res, 413, 'AUDIO_TOO_BIG', 'Запись длиннее ~3 минут')
+      const t0 = Date.now()
+      const text = await transcribe(buf, mime)
+      if (text === null) return fail(res, 503, 'STT_UNAVAILABLE', 'Не удалось распознать, попробуйте через минуту')
+      return send(res, 200, { text, ms: Date.now() - t0 })
+    }
 
     // Скриншот → текст (сайт и проверки). Тело: { image: base64, mime }
     if (m === 'POST' && path === '/ocr') {

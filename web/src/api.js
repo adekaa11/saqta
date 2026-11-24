@@ -155,6 +155,19 @@ function shrinkImage(file, max = 1600) {
   })
 }
 
+// Голос → текст на сервере
+export async function transcribeAudio(blob, mime) {
+  if (USE_MOCK) throw new ApiError('STT_OFFLINE', 'Голос работает только с сервером', 0)
+  const data = await new Promise((resolve, reject) => {
+    const fr = new FileReader()
+    fr.onload = () => resolve(String(fr.result).split(',')[1])
+    fr.onerror = () => reject(new ApiError('BAD_AUDIO', 'Не удалось прочитать запись', 0))
+    fr.readAsDataURL(blob)
+  })
+  const r = await http('POST', '/transcribe', { audio: data, mime })
+  return r.text || ''
+}
+
 // Метрики пилота (страница #/stats)
 export async function getMetrics(since) {
   if (USE_MOCK) throw new ApiError('OFFLINE', 'Метрики только с сервером', 0)

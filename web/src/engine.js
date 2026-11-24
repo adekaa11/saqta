@@ -23,6 +23,11 @@ const RULES = [
   { type: 'link', w: 15, re: /https?:\/\/\S+|bit\.ly\/\S+|за\S{0,2}дите\s+на\s+(этот\s+|наш\s+)?сайт|перейдите\s+по\s+ссылке|(скину|отправлю|пришлю|скинул|отправил)\s+(вам\s+)?ссылк\w*|сілтеме\S*\s+(\S+\s+)?(өтіңіз|басыңыз)/i },
   { type: 'too_good', w: 30, re: /разда\w*\s+(\S+\s+)?деньги|бесплатн\w*\s+деньги|компенсаци\w*|ақша\s+тарат\S*|тегін\s+ақша/i },
   { type: 'too_good', w: 15, re: /выигрыш\w*|доход\s+от|инвестиру\w*|ұтыс\w*|табыс\w*/i },
+  // Английский (запасной режим, если модели недоступны) и номер карты в тексте
+  { type: 'sms_code', w: 35, re: /(code|otp|pin)\s+(from|in)\s+(the\s+)?sms|sms\s+code|verification\s+code|(tell|send|give)\s+(me\s+)?(the\s+|your\s+)?(code|otp|pin)/i },
+  { type: 'authority', w: 20, re: /(bank|halyk|kaspi)\s+security|security\s+(service|department)|this\s+is\s+(the\s+)?(bank|police)/i },
+  { type: 'urgency', w: 15, re: /urgent\w*|immediately|right\s+now|(account|card)\s+(is|has\s+been)\s+(blocked|suspended)|in\s+trouble/i },
+  { type: 'payment_request', w: 20, re: /send\s+(me\s+)?(\d[\d\s]*|money|tenge)\S*|transfer\s+(the\s+)?(money|\d+)|(?<!\d)(?:\d{4}[ -]?){3}\d{4}(?!\d)/i },
   // Живая речь: браузер пишет «эсэмэс», «каспи», «код» без «SMS» — ловим разговорные формы
   { type: 'sms_code', w: 35, re: /(назва\w*|назови\w*|сказа\w*|скажи\w*|продикт\w*|сообщ\w*|напиш\w*|написа\w*|скин\w*|отправ\w*|пришл\w*|айт\w*|жаз\w*|жібер\w*)\s+(\S+\s+){0,2}код\w*|код\w*\s+(\S+\s+){0,2}(назва\w*|назови\w*|сказа\w*|скажи\w*|напиш\w*|айт\w*|жаз\w*|жібер\w*)|эсэмэс|смс-?\s*код/i },
   { type: 'authority', w: 20, re: /(позвонил\w*|звонил\w*|қоңырау\s+шалды)\s+(\S+\s+){0,2}(каспи|kaspi|халык|halyk|банк\w*|полици\w*)|из\s+(каспи|халык|банка)|(каспи|халык)\S*\s+банк\S*/i },
@@ -92,7 +97,10 @@ export function ruleAnalyze(text) {
       : types.has('link') ? SCHEMES.marketplace
         : types.has('too_good') ? SCHEMES.investment
           : SCHEMES.none
-  const kk = /[әғқңөұүһі]/i.test(text)
+  // Казахский: кириллица с казахскими буквами или латиница (новый алфавит / транслит в мессенджерах)
+  const kk = /[әғқңөұүһі]/i.test(text) ||
+    /[ǵıńú]/i.test(text) ||
+    /\b(s[aá]lemetsiz|qon[yı]rau|ait[yı]n[yı]z|kartan[yı]z|aqsha|bankten|sizdi[nń]|kodt[yı]|zhasald[yı]|qauipsiz|[hx]abarlas|turm[yı]n|turm[yı]z|beri[nń]iz|jiberi[nń]iz|rahmet|ke[sś]irini[zź])/i.test(text)
   return {
     id: uid('chk'), risk_score: score, verdict, detected_lang: kk ? 'kk' : 'ru', scheme, red_flags: flags,
     summary_ru: verdict === 'safe' ? 'Явных признаков мошенничества не найдено.' : verdict === 'scam' ? 'Это почти наверняка мошенники.' : 'Есть подозрительные признаки. Будьте осторожны.',
