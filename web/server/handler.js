@@ -1,7 +1,7 @@
 // Saqta API — одна функция Vercel на все /api/* (контракт из PLAN.md, раздел 5).
 import { makeCheckAlert, makeSosAlert, mocks } from '../src/engine.js'
 import { analyze } from './analyze.js'
-import { llmEnabled, llmModel } from './llm.js'
+import { llmEnabled, llmModel, listGeminiModels } from './llm.js'
 import * as db from './store.js'
 import { raiseAlert, handleTelegram, setupWebhook, botUsername } from './telegram.js'
 
@@ -47,6 +47,8 @@ export default async function handler(req, res) {
       const r = await setupWebhook()
       return send(res, r.status, r.body)
     }
+
+    if (m === 'GET' && path === '/llm/models') return send(res, 200, { models: await listGeminiModels() })
 
     if (m === 'GET' && path === '/stats') {
       const keys = ['checks', 'checks:scam', 'checks:suspicious', 'checks:safe', 'alerts', 'families', 'elders']

@@ -3,7 +3,7 @@
 // - Модель решает итоговый риск, НО «жёсткие» признаки из правил (код из SMS, безопасный счёт,
 //   удалённый доступ, «ошибочный перевод») не дают опустить риск ниже оценки правил.
 import { ruleAnalyze, SCHEMES } from '../src/engine.js'
-import { llmAnalyze, LLM_FLAG_TYPES } from './llm.js'
+import { llmAnalyze, LLM_FLAG_TYPES, lastGeminiModel } from './llm.js'
 
 const HARD = new Set(['sms_code', 'safe_account', 'remote_access', 'wrong_transfer'])
 const verdictOf = (s) => (s >= 70 ? 'scam' : s >= 40 ? 'suspicious' : 'safe')
@@ -71,6 +71,7 @@ export async function analyze(text) {
     summary_kk: pick('summary_kk'),
     advice_ru: pickList('advice_ru'),
     advice_kk: pickList('advice_kk'),
-    engine: raisedByRules ? 'llm+rules' : 'llm'
+    engine: raisedByRules ? 'llm+rules' : 'llm',
+    llm_model: lastGeminiModel || undefined
   }
 }
