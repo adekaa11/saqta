@@ -56,14 +56,20 @@ export const SCHEMES = {
   none: { code: 'none', title_ru: 'Признаков мошенничества нет', title_kk: 'Алаяқтық белгілері жоқ' }
 }
 
+// Собственные предупреждения банков («Никому не сообщайте код», «Кодты ешкімге айтпаңыз») —
+// не признак обмана. Закрываем их пробелами той же длины, чтобы позиции в тексте не съехали.
+const BANK_WARNING = uni(/(никому|никогда)\s+(\S+\s+){0,2}не\s+(сообща\w*|говор\w*|называ\w*|переда\w*|сообщ\w*)[^.!?,]*|не\s+(сообща\w*|говорите|называйте|передавайте)\s+(\S+\s+){0,3}(код\w*|парол\w*)[^.!?,]*|никому\s+не\s+\S+[^.!?,]*|ешкімге\s+[^.!?,]*?(айтпаңыз|бермеңіз|хабарламаңыз)/i)
+const maskWarnings = (s) => s.replace(new RegExp(BANK_WARNING.source, 'giu'), (m) => ' '.repeat(m.length))
+
 export function ruleAnalyze(text) {
   const flags = []
   let score = 0
+  const scan = maskWarnings(text)
   for (const r of RULES) {
     if (flags.some((f) => f.type === r.type)) continue // один тип — одна улика
-    const m = text.match(r.re)
+    const m = scan.match(r.re)
     const hit = m ? m[0].trim().replace(/[.,!?;:]+$/, '') : ''
-    if (hit.length > 1) {
+    if (hit.length > 1 && text.includes(hit)) {
       score += r.w
       const [ru, kk] = FLAG_TEXT[r.type]
       flags.push({ text: hit, type: r.type, explanation_ru: ru, explanation_kk: kk })

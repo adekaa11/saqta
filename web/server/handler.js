@@ -111,6 +111,8 @@ export default async function handler(req, res) {
       if (text.length > 4000) return fail(res, 413, 'TEXT_TOO_LONG', 'Слишком длинный текст')
       const t0 = Date.now()
       const r = await analyze(text)
+      // Прогоны теста точности (scripts/eval.mjs) не считаем пилотом и не шлём тревог
+      if (b.eval === true) { r.family_alert_sent = false; return send(res, 200, r) }
       await db.incr('saqta:stats:checks')
       await db.incr(`saqta:stats:checks:${r.verdict}`)
       await db.logEvent({ type: 'check', src: 'site', input: b.source === 'voice' || b.source === 'screenshot' ? b.source : 'text', verdict: r.verdict, score: r.risk_score, engine: r.engine, ms: Date.now() - t0 })
