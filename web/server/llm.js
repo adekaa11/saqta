@@ -4,7 +4,7 @@
 const GEMINI_KEY = process.env.GEMINI_API_KEY
 const GROQ_KEY = process.env.GROQ_API_KEY
 const MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
-const GROQ_MODELS = [...new Set([process.env.GROQ_MODEL || 'llama-3.3-70b-versatile', 'openai/gpt-oss-120b', 'meta-llama/llama-4-scout-17b-16e-instruct'])]
+const GROQ_MODELS = [...new Set([process.env.GROQ_MODEL || 'openai/gpt-oss-120b', 'meta-llama/llama-4-scout-17b-16e-instruct'])]
 export const llmEnabled = Boolean(GEMINI_KEY || GROQ_KEY)
 export const llmModel = [GEMINI_KEY && `gemini:${MODEL}`, GROQ_KEY && `groq:${GROQ_MODELS[0]}`].filter(Boolean).join(' → ') || null
 
