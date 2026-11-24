@@ -1,9 +1,13 @@
-// Анализ по смыслу через Groq (бесплатный тариф, OpenAI-совместимый API).
+// Анализ по смыслу языковой моделью (бесплатные тарифы).
+// Провайдер выбирается по ключу: GEMINI_API_KEY (Google, приоритет) или GROQ_API_KEY.
 // Без ключа или при ошибке возвращает null — тогда работают одни правила.
-const KEY = process.env.GROQ_API_KEY
-const MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
-export const llmEnabled = Boolean(KEY)
-export const llmModel = MODEL
+const GEMINI_KEY = process.env.GEMINI_API_KEY
+const GROQ_KEY = process.env.GROQ_API_KEY
+const PROVIDER = GEMINI_KEY ? 'gemini' : GROQ_KEY ? 'groq' : null
+const MODEL = PROVIDER === 'gemini' ? process.env.GEMINI_MODEL || 'gemini-flash-latest'
+  : process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'
+export const llmEnabled = Boolean(PROVIDER)
+export const llmModel = PROVIDER ? `${PROVIDER}:${MODEL}` : null
 
 export const LLM_FLAG_TYPES = ['sms_code', 'safe_account', 'remote_access', 'authority', 'payment_request', 'personal_data', 'urgency', 'link', 'too_good', 'wrong_transfer', 'other']
 export const LLM_SCHEMES = ['fake_bank', 'safe_account', 'fake_gov', 'wrong_transfer', 'relative', 'prize', 'marketplace', 'investment', 'other', 'none']
@@ -32,31 +36,55 @@ const SYSTEM = `Ты — антифрод-аналитик сервиса Saqta 
 
 risk_score: 70–100 — почти наверняка мошенники; 40–69 — подозрительно; 0–39 — признаков нет. Не больше 4 улик. Пиши просто и спокойно, как для бабушки. Казахский — литературный, кириллица.`
 
-export async function llmAnalyze(text, { timeoutMs = 8000 } = {}) {
-  if (!KEY) return null
+// Ответ модели — JSON-строка; иногда оборачивается в ```json … ``` — снимаем обёртку
+function parseJSON(s) {
+  if (!s) return null
+  const m = String(s).match(/\{[\s\S]*\}/)
+  return m ? JSON.parse(m[0]) : null
+}
+
+async function callGemini(text, signal) {
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+    method: 'POST',
+    signal,
+    headers: { 'x-goog-api-key': GEMINI_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: SYSTEM }] },
+      contents: [{ role: 'user', parts: [{ text: `Текст для проверки:\n"""\n${text}\n"""` }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 4000, responseMimeType: 'application/json' }
+    })
+  })
+  if (!r.ok) throw new Error(`gemini http ${r.status}: ${(await r.text()).slice(0, 300)}`)
+  const j = await r.json()
+  return parseJSON(j.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join(''))
+}
+
+async function callGroq(text, signal) {
+  const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    signal,
+    headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: MODEL,
+      temperature: 0.1,
+      max_tokens: 1000,
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: `Текст для проверки:\n"""\n${text}\n"""` }]
+    })
+  })
+  if (!r.ok) throw new Error(`groq http ${r.status}: ${(await r.text()).slice(0, 300)}`)
+  const j = await r.json()
+  return parseJSON(j.choices?.[0]?.message?.content)
+}
+
+export async function llmAnalyze(text, { timeoutMs = 12000 } = {}) {
+  if (!PROVIDER) return null
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
-    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      signal: ctrl.signal,
-      headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.1,
-        max_tokens: 1000,
-        response_format: { type: 'json_object' },
-        messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: `Текст для проверки:\n"""\n${text}\n"""` }]
-      })
-    })
-    if (!r.ok) {
-      console.error('groq http', r.status, (await r.text()).slice(0, 300))
-      return null
-    }
-    const j = await r.json()
-    return JSON.parse(j.choices?.[0]?.message?.content || 'null')
+    return await (PROVIDER === 'gemini' ? callGemini : callGroq)(text, ctrl.signal)
   } catch (e) {
-    console.error('groq failed', e?.name, e?.message)
+    console.error('llm failed', PROVIDER, e?.name, e?.message)
     return null
   } finally {
     clearTimeout(timer)
