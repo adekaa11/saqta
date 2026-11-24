@@ -4,6 +4,7 @@
 import { createHash } from 'node:crypto'
 import { makeCheckAlert, makeSosAlert } from '../src/engine.js'
 import { analyze } from './analyze.js'
+import { transcribe, readImage } from './media.js'
 import * as db from './store.js'
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
@@ -92,10 +93,8 @@ function verdictMessage(r, alerted) {
   return lines.join('\n')
 }
 
-const HELP = 'Күдікті хабарламаны осында жіберіңіз (көшіріп немесе «Переслать»). Мен 3 секундта тексеремін.\n' +
-  'Пришлите или перешлите сюда подозрительное сообщение — проверю за 3 секунды.\n\n' +
-  'Қоңырауды өз сөзіңізбен жазыңыз: телефон пернетақтасындағы микрофонды басып, айтып беріңіз.\n' +
-  'Звонок можно пересказать: нажмите микрофон на клавиатуре телефона и расскажите.'
+const HELP = 'Күдікті хабарламаны осында жіберіңіз — мәтінін, скриншотын немесе «Переслать». Қоңырау болса — дауыстық хабармен айтып беріңіз.\n' +
+  'Пришлите сюда подозрительное сообщение — текстом, скриншотом или «Переслать». Был звонок — расскажите голосовым сообщением.'
 
 // ---------- обработка апдейтов ----------
 async function onStart(msg, payload) {
@@ -176,11 +175,23 @@ async function onMessage(msg) {
 
   if (text === SOS_LABEL || text === '/sos') return sendSos(chat, user)
 
-  if (msg.voice || msg.audio || msg.video_note) {
-    return send(chat, 'Дауыстық хабарды әзірге тыңдай алмаймын. Пернетақтадағы микрофонды басып, мәтінмен жіберіңіз.\nГолосовые пока не распознаю. Нажмите микрофон на клавиатуре телефона — он сам превратит речь в текст — и отправьте.')
-  }
-  if (msg.photo && !text) {
-    return send(chat, 'Скриншотты әзірге оқи алмаймын — мәтінін көшіріп жіберіңіз.\nСкриншоты пока не читаю — скопируйте текст сообщения и пришлите.')
+  // Голосовое или скриншот → текст → тот же анализ
+  const voice = msg.voice || msg.audio || msg.video_note
+  const imageDoc = msg.document?.mime_type?.startsWith('image/') ? msg.document : null
+  const photo = msg.photo?.length ? msg.photo[msg.photo.length - 1] : imageDoc
+  if (voice || photo) {
+    const media = voice || photo
+    if (voice && (voice.duration || 0) > 180) return send(chat, 'Хабар тым ұзын — 3 минутқа дейін жіберіңіз.\nСлишком длинное сообщение — пришлите до 3 минут.')
+    if ((media.file_size || 0) > 15e6) return send(chat, 'Файл тым үлкен. / Файл слишком большой.')
+    tg('sendChatAction', { chat_id: chat, action: 'typing' }).catch(() => null)
+    const wait = await send(chat, voice ? 'Тыңдап жатырмын… / Слушаю…' : 'Скриншотты оқып жатырмын… / Читаю скриншот…').catch(() => null)
+    const mime = msg.voice ? 'audio/ogg' : msg.video_note ? 'video/mp4' : msg.audio ? msg.audio.mime_type || 'audio/mpeg' : imageDoc?.mime_type || 'image/jpeg'
+    const buf = await downloadFile(media.file_id)
+    const got = buf ? await (voice ? transcribe(buf, mime) : readImage(buf, mime)) : null
+    if (got === null) return replace(chat, wait, 'Қазір тани алмадым — бір минуттан соң қайталаңыз немесе мәтінмен жазыңыз.\nНе получилось распознать — попробуйте через минуту или пришлите текстом.')
+    const combined = [got, text].filter(Boolean).join('\n').trim() // подпись к фото тоже проверяем
+    if (!combined) return replace(chat, wait, voice ? 'Сөз естілмеді — қайта жазып көріңіз.\nНе расслышал слов — запишите ещё раз.' : 'Скриншоттан хабарлама мәтінін таппадым.\nНа скриншоте не нашёл текста сообщения.')
+    return checkAndReply(chat, user, combined.slice(0, 4000), wait, voice ? 'Естігенім / Я услышал' : 'Скриншоттағы мәтін / Текст со скриншота')
   }
   if (!text) return send(chat, HELP)
   if (text.length > 4000) return send(chat, 'Мәтін тым ұзын. / Слишком длинный текст.')
@@ -188,6 +199,32 @@ async function onMessage(msg) {
   // Сразу показываем, что бот работает: «печатает…» + сообщение, которое потом заменим вердиктом
   tg('sendChatAction', { chat_id: chat, action: 'typing' }).catch(() => null)
   const wait = await send(chat, 'Тексеріп жатырмын… / Проверяю…').catch(() => null)
+  return checkAndReply(chat, user, text, wait)
+}
+
+async function downloadFile(file_id) {
+  try {
+    const f = await tg('getFile', { file_id })
+    if (!f.ok) return null
+    const r = await fetch(`https://api.telegram.org/file/bot${TOKEN}/${f.result.file_path}`)
+    return r.ok ? Buffer.from(await r.arrayBuffer()) : null
+  } catch (e) {
+    console.error('download failed', e?.message)
+    return null
+  }
+}
+
+// Заменяет «Проверяю…» на итоговый текст (или шлёт новое сообщение, если заменить не вышло)
+async function replace(chat, wait, text, extra = {}) {
+  const msgId = wait?.ok && wait.result?.message_id
+  if (msgId) {
+    const ed = await tg('editMessageText', { chat_id: chat, message_id: msgId, text, parse_mode: 'HTML', disable_web_page_preview: true, ...extra }).catch(() => null)
+    if (ed?.ok) return ed
+  }
+  return send(chat, text, extra)
+}
+
+async function checkAndReply(chat, user, text, wait, heardLabel) {
   const t0 = Date.now()
   const r = await analyze(text)
   r.elapsed_ms = Date.now() - t0
@@ -200,14 +237,10 @@ async function onMessage(msg) {
   }
   // При риске SOS — прямо под ответом: клавиатуру внизу Telegram часто прячет
   const sosButton = user?.role === 'elder' && user.fid && r.verdict !== 'safe' ? { inline_keyboard: [[{ text: SOS_LABEL, callback_data: 'sos' }]] } : undefined
-  const body = verdictMessage(r, alerted)
-  const msgId = wait?.ok && wait.result?.message_id
-  if (msgId) {
-    const ed = await tg('editMessageText', { chat_id: chat, message_id: msgId, text: body, parse_mode: 'HTML', disable_web_page_preview: true, ...(sosButton ? { reply_markup: sosButton } : {}) }).catch(() => null)
-    if (ed?.ok) return ed
-  }
-  const markup = sosButton || (user?.role === 'elder' ? elderKeyboard : undefined)
-  return send(chat, body, markup ? { reply_markup: markup } : {})
+  let body = verdictMessage(r, alerted)
+  // Показываем, что бот услышал/прочитал — чтобы человек видел, что проверено именно его сообщение
+  if (heardLabel) body = `<i>${heardLabel}:</i>\n«${esc(text.length > 700 ? text.slice(0, 700) + '…' : text)}»\n\n${body}`
+  return replace(chat, wait, body, sosButton ? { reply_markup: sosButton } : {})
 }
 
 async function sendSos(chat, user) {

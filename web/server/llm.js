@@ -67,7 +67,7 @@ export let lastModel = null
 const noThinkingCfg = new Set() // модели, которые не принимают thinkingConfig
 const retryable = (e) => e.name === 'TimeoutError' || e.name === 'AbortError' || /http (400|404|429|500|502|503)/.test(e.message)
 
-async function tryInOrder(attempts, call, signal) {
+export async function tryInOrder(attempts, call, signal) {
   let lastErr
   for (const { model, ms, pause } of attempts) {
     if (pause) await new Promise((r) => setTimeout(r, pause))

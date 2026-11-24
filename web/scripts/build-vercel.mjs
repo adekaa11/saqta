@@ -18,7 +18,7 @@ await build({
   outfile: join(fn, 'index.js'), logLevel: 'warning'
 })
 writeFileSync(join(fn, '.vc-config.json'), JSON.stringify({
-  runtime: 'nodejs22.x', handler: 'index.js', launcherType: 'Nodejs', shouldAddHelpers: true, maxDuration: 25
+  runtime: 'nodejs22.x', handler: 'index.js', launcherType: 'Nodejs', shouldAddHelpers: true, maxDuration: 50
 }))
 writeFileSync(join(out, 'config.json'), JSON.stringify({
   version: 3,
