@@ -145,6 +145,19 @@ export default function Family() {
                 <div className="px-4 py-4 sm:px-5">
                   {!isSos && <div className="text-[22px] font-black text-risk-scam">{scheme(a)}</div>}
                   <p className="mt-1 text-xl leading-snug text-ink">«{a.text_preview}»</p>
+                  {!isSos && a.reasons?.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-lg font-black text-cobalt-deep">{t.whyTitle}</div>
+                      <ol className="mt-1 space-y-1.5">
+                        {a.reasons.map((r, i) => (
+                          <li key={i} className="flex gap-2.5 text-lg leading-snug text-ink">
+                            <span className="num mt-0.5 h-7 w-7 shrink-0 bg-risk-scam text-base text-white">{i + 1}</span>
+                            <span><b>«{r.text}»</b> — {lang === 'kk' ? r.kk || r.ru : r.ru}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
                   <div className="mt-4 flex flex-wrap items-center gap-3">
                     <a href={MOM_PHONE} className="focus-ring inline-flex min-h-14 items-center gap-2.5 rounded-xl bg-cobalt px-5 py-2 text-xl font-black text-white shadow-[inset_0_0_0_3px_rgb(var(--cobalt)),inset_0_0_0_4.5px_rgb(var(--gold))] hover:bg-cobalt-press">
                       <PhoneIcon className="h-6 w-6" /> {t.callMom}

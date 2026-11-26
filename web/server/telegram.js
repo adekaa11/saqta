@@ -56,7 +56,12 @@ export async function raiseAlert(fid, alert, receivedAt = null) {
     const watchers = await db.sMembers(watchersKey(fid))
     const text = alert.type === 'sos'
       ? `<b>SOS · ${esc(alert.member_name)}</b>\nҚазір хабарласыңыз. / Срочно позвоните.${alert.text_preview && alert.text_preview !== 'SOS' ? `\n\n${esc(alert.text_preview)}` : ''}`
-      : `<b>ДАБЫЛ · ${esc(alert.member_name)}</b>\n${VERDICT[alert.verdict].kk} ${alert.risk_score}/100 — ${esc(alert.scheme?.title_kk)}\n\n«${esc(alert.text_preview)}»\n\nҚазір қоңырау шалыңыз, ешкімге ақша аудармасын. / Позвоните сейчас, пока не перевели деньги.`
+      : `<b>ДАБЫЛ · ${esc(alert.member_name)}</b>\n${VERDICT[alert.verdict].kk} ${alert.risk_score}/100 — ${esc(alert.scheme?.title_kk)}\n\n«${esc(alert.text_preview)}»` +
+        (alert.reasons?.length
+          ? `\n\n<b>${alert.lang === 'kk' ? 'Неге алаяқтық' : 'Почему бот так решил'}:</b>\n` +
+            alert.reasons.map((r, i) => `${NUM[i]} «${esc(r.text)}» — ${esc(alert.lang === 'kk' ? r.kk || r.ru : r.ru)}`).join('\n')
+          : '') +
+        `\n\nҚазір қоңырау шалыңыз, ешкімге ақша аудармасын. / Позвоните сейчас, пока не перевели деньги.`
     const markup = { inline_keyboard: [[{ text: 'Көрдім / Увидел', callback_data: `seen:${fid}:${alert.id}` }]] }
     const results = await Promise.all(watchers.map((c) => send(c, text, { reply_markup: markup }).catch(() => null)))
     delivered = results.filter((r) => r?.ok).length

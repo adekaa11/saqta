@@ -124,6 +124,9 @@ export function makeCheckAlert(res, text, member_name) {
   return {
     id: uid('alr'), type: 'check', check_id: res.id, member_name,
     risk_score: res.risk_score, verdict: res.verdict, scheme: res.scheme,
+    // «Почему бот так решил» — показываем ребёнку в тревоге (идея Дана)
+    lang: res.detected_lang,
+    reasons: (res.red_flags || []).slice(0, 3).map((f) => ({ text: f.text, ru: f.explanation_ru, kk: f.explanation_kk })),
     text_preview: text.length > 60 ? text.slice(0, 60) + '…' : text, status: 'new', created_at: new Date().toISOString()
   }
 }
