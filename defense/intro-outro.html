@@ -1,0 +1,206 @@
+<title>Saqta Intro Outro</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;700;900&display=swap">
+<style>
+/* Одна сцена 16:9 в мире «кобальтовой сетки / фарфора»: роспись только по краям, под текстом чистый фон.
+   Осознанно один вид (без тёмной темы) — это кадр для видео, а не страница для чтения. */
+:root {
+  --porcelain: #FBF8F1;
+  --glaze: #FFFDF8;
+  --cobalt: #15308C;
+  --cobalt-deep: #0C1F63;
+  --gold: #B8901E;
+  --risk: #C2281A;
+  --ink: #16204A;
+  --display: "Golos Text", "Segoe UI", Arial, sans-serif;
+  color-scheme: light;
+}
+html, body { height: 100%; }
+body {
+  margin: 0; background: #0b0f1f; color: var(--ink); font-family: var(--display);
+  display: grid; place-items: center; overflow: hidden;
+  padding-left: max(0px, env(safe-area-inset-left, 0px)); padding-right: max(0px, env(safe-area-inset-right, 0px));
+}
+.stage {
+  position: relative; width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; max-width: 100%;
+  background: var(--porcelain); overflow: hidden; container-type: inline-size;
+}
+/* Бордюр-роспись: кобальтовая сетка по краю */
+.frame { position: absolute; inset: 0; pointer-events: none; }
+.frame::before {
+  content: ""; position: absolute; inset: 0;
+  background:
+    repeating-linear-gradient(45deg, var(--cobalt) 0 0.13cqw, transparent 0.13cqw 1.1cqw),
+    repeating-linear-gradient(-45deg, var(--cobalt) 0 0.13cqw, transparent 0.13cqw 1.1cqw);
+  -webkit-mask: linear-gradient(#000 0 0) top/100% 2.6cqw no-repeat, linear-gradient(#000 0 0) bottom/100% 2.6cqw no-repeat,
+                linear-gradient(#000 0 0) left/2.6cqw 100% no-repeat, linear-gradient(#000 0 0) right/2.6cqw 100% no-repeat;
+          mask: linear-gradient(#000 0 0) top/100% 2.6cqw no-repeat, linear-gradient(#000 0 0) bottom/100% 2.6cqw no-repeat,
+                linear-gradient(#000 0 0) left/2.6cqw 100% no-repeat, linear-gradient(#000 0 0) right/2.6cqw 100% no-repeat;
+  opacity: .9;
+}
+.frame::after {
+  content: ""; position: absolute; inset: 2.6cqw;
+  box-shadow: inset 0 0 0 0.22cqw var(--cobalt), inset 0 0 0 0.55cqw var(--porcelain), inset 0 0 0 0.75cqw var(--gold);
+}
+.scene { position: absolute; inset: 0; display: none; place-items: center; }
+.scene.on { display: grid; }
+
+/* ---------- ИНТРО ---------- */
+.intro .wrap { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1.6cqw; }
+.mark { width: 15cqw; height: 15cqw; }
+.mark .ring { fill: none; stroke: var(--gold); stroke-width: 3; stroke-dasharray: 107; stroke-dashoffset: 107; }
+.mark .thin { fill: none; stroke: var(--cobalt); stroke-width: .5; opacity: 0; }
+.mark .disc { fill: var(--cobalt); transform-origin: 20px 20px; transform: scale(0); }
+.mark .tick { fill: none; stroke: #fff; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 20; stroke-dashoffset: 20; }
+.word { font-size: 9.5cqw; font-weight: 900; letter-spacing: -.02em; color: var(--cobalt-deep); line-height: .9; display: flex; overflow: hidden; }
+.word span { display: inline-block; transform: translateY(110%); }
+.meaning { font-size: 1.9cqw; font-weight: 500; color: var(--ink); opacity: 0; }
+.meaning b { color: var(--cobalt); font-weight: 700; }
+.rule { width: 0; height: .2cqw; background: var(--gold); }
+.thesis { font-size: 2.6cqw; font-weight: 700; color: var(--cobalt-deep); opacity: 0; line-height: 1.25; max-width: 70cqw; }
+.thesis em { font-style: normal; color: var(--risk); }
+.byline { position: absolute; bottom: 4.6cqw; left: 0; right: 0; text-align: center; font-size: 1.35cqw; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--cobalt); opacity: 0; }
+
+.play .intro .ring { animation: draw 1.1s .2s cubic-bezier(.65,0,.35,1) forwards; }
+.play .intro .thin { animation: fade .4s 1s forwards; }
+.play .intro .disc { animation: pop .7s .9s cubic-bezier(.34,1.56,.64,1) forwards; }
+.play .intro .tick { animation: draw .5s 1.45s ease-out forwards; }
+.play .intro .word span { animation: rise .7s cubic-bezier(.16,1,.3,1) forwards; }
+.play .intro .word span:nth-child(1) { animation-delay: 1.8s }
+.play .intro .word span:nth-child(2) { animation-delay: 1.88s }
+.play .intro .word span:nth-child(3) { animation-delay: 1.96s }
+.play .intro .word span:nth-child(4) { animation-delay: 2.04s }
+.play .intro .word span:nth-child(5) { animation-delay: 2.12s }
+.play .intro .meaning { animation: fade .6s 2.6s forwards; }
+.play .intro .rule { animation: grow .7s 3.1s cubic-bezier(.65,0,.35,1) forwards; }
+.play .intro .thesis { animation: fadeup .8s 3.5s cubic-bezier(.16,1,.3,1) forwards; }
+.play .intro .byline { animation: fade .8s 4.4s forwards; }
+
+/* ---------- АУТРО ---------- */
+.outro .wrap { display: grid; grid-template-columns: auto 1fr; gap: 3.4cqw; align-items: center; width: 78cqw; }
+.outro .mark { width: 13cqw; height: 13cqw; }
+.lines { display: flex; flex-direction: column; gap: 1.3cqw; min-width: 0; }
+.l1 { font-size: 3.6cqw; font-weight: 900; color: var(--risk); line-height: 1.08; opacity: 0; }
+.l2 { font-size: 3.6cqw; font-weight: 900; color: var(--cobalt-deep); line-height: 1.08; opacity: 0; }
+.l3 { font-size: 1.75cqw; font-weight: 500; color: var(--ink); opacity: 0; }
+.outro .rule { margin-block: .4cqw; }
+.links { display: flex; flex-wrap: wrap; gap: .8cqw 2.4cqw; font-size: 1.6cqw; font-weight: 700; color: var(--cobalt); opacity: 0; }
+.links span::before { content: "◆"; color: var(--gold); font-size: .8em; margin-right: .6cqw; position: relative; top: -.1em; }
+.team { position: absolute; bottom: 4.6cqw; left: 0; right: 0; text-align: center; font-size: 1.35cqw; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--cobalt); opacity: 0; }
+
+.play .outro .ring { animation: draw 1s .1s cubic-bezier(.65,0,.35,1) forwards; }
+.play .outro .thin { animation: fade .4s .8s forwards; }
+.play .outro .disc { animation: pop .6s .7s cubic-bezier(.34,1.56,.64,1) forwards; }
+.play .outro .tick { animation: draw .45s 1.15s ease-out forwards; }
+.play .outro .l1 { animation: fadeup .8s .5s cubic-bezier(.16,1,.3,1) forwards; }
+.play .outro .l2 { animation: fadeup .8s 1.6s cubic-bezier(.16,1,.3,1) forwards; }
+.play .outro .l3 { animation: fade .7s 2.5s forwards; }
+.play .outro .rule { animation: grow .7s 3s cubic-bezier(.65,0,.35,1) forwards; }
+.play .outro .links { animation: fade .8s 3.4s forwards; }
+.play .outro .team { animation: fade .8s 4s forwards; }
+
+@keyframes draw { to { stroke-dashoffset: 0 } }
+@keyframes pop { to { transform: scale(1) } }
+@keyframes rise { to { transform: translateY(0) } }
+@keyframes fade { to { opacity: 1 } }
+@keyframes fadeup { from { opacity: 0; transform: translateY(1.2cqw) } to { opacity: 1; transform: none } }
+@keyframes grow { to { width: 22cqw } }
+
+/* Без анимации — сразу финальный кадр */
+@media (prefers-reduced-motion: reduce) {
+  .play * { animation-duration: 1ms !important; animation-delay: 0s !important; }
+}
+
+/* Панель управления: прячется на время записи */
+.bar {
+  position: fixed; top: max(12px, env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 5;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; max-width: calc(100vw - 32px);
+  background: rgba(12,31,99,.92); color: #fff; padding: 8px 10px; border-radius: 12px; font: 500 14px/1.2 var(--display);
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+}
+.bar button { font: 700 14px var(--display); color: var(--cobalt-deep); background: #fff; border: 0; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+.bar button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.bar .hint { opacity: .85; padding-inline: 4px; }
+.recording .bar { display: none; }
+</style>
+
+<div class="bar" id="bar">
+  <button id="bIntro" type="button">▶ Интро</button>
+  <button id="bOutro" type="button">▶ Аутро</button>
+  <button id="bFull" type="button">Во весь экран</button>
+  <span class="hint">Запуск прячет панель на 9 с · R — повторить · Esc — показать</span>
+</div>
+
+<div class="stage" id="stage">
+  <div class="frame"></div>
+
+  <section class="scene intro on" id="intro" aria-label="Интро">
+    <div class="wrap">
+      <svg class="mark" viewBox="0 0 40 40" aria-hidden="true">
+        <circle cx="20" cy="20" r="18.5" fill="#fff"/>
+        <circle class="ring" cx="20" cy="20" r="17"/>
+        <circle class="thin" cx="20" cy="20" r="14.4"/>
+        <circle class="disc" cx="20" cy="20" r="12.5"/>
+        <path class="tick" d="m14.5 20.3 3.8 3.8 7.2-7.6"/>
+      </svg>
+      <div class="word" aria-label="Saqta"><span>S</span><span>a</span><span>q</span><span>t</span><span>a</span></div>
+      <div class="meaning"><b>сақта</b> — «сохрани» · семейный щит от мошенников</div>
+      <div class="rule"></div>
+      <div class="thesis">Банк видит перевод.<br>Saqta слышит <em>обман</em> — до перевода.</div>
+    </div>
+    <div class="byline">Команда C.L.A.Y · SPARK Startup Hackathon · Финал</div>
+  </section>
+
+  <section class="scene outro" id="outro" aria-label="Аутро">
+    <div class="wrap">
+      <svg class="mark" viewBox="0 0 40 40" aria-hidden="true">
+        <circle cx="20" cy="20" r="18.5" fill="#fff"/>
+        <circle class="ring" cx="20" cy="20" r="17"/>
+        <circle class="thin" cx="20" cy="20" r="14.4"/>
+        <circle class="disc" cx="20" cy="20" r="12.5"/>
+        <path class="tick" d="m14.5 20.3 3.8 3.8 7.2-7.6"/>
+      </svg>
+      <div class="lines">
+        <div class="l1">Алаяққа бір минут керек.</div>
+        <div class="l2">Saqta-ға — бірнеше секунд және бір отбасы.</div>
+        <div class="l3">Мошеннику нужна одна минута. Saqta — несколько секунд и одна семья.</div>
+        <div class="rule"></div>
+        <div class="links"><span>@Saqta_kz_bot</span><span>saqta-delta.vercel.app</span><span>github.com/adekaa11/saqta</span></div>
+      </div>
+    </div>
+    <div class="team">C.L.A.Y · Кадыргажы Адильжан · Югай Дан</div>
+  </section>
+</div>
+
+<script>
+const stage = document.getElementById('stage')
+let hideTimer = null
+function play(id) {
+  document.querySelectorAll('.scene').forEach((s) => s.classList.toggle('on', s.id === id))
+  stage.classList.remove('play')
+  void stage.offsetWidth // перезапуск анимации
+  stage.classList.add('play')
+  stage.dataset.scene = id
+  document.body.classList.add('recording')
+  clearTimeout(hideTimer)
+  hideTimer = setTimeout(() => document.body.classList.remove('recording'), 9000)
+}
+document.getElementById('bIntro').onclick = () => play('intro')
+document.getElementById('bOutro').onclick = () => play('outro')
+document.getElementById('bFull').onclick = () => {
+  const el = document.documentElement
+  if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().catch(() => {})
+  else if (document.exitFullscreen) document.exitFullscreen().catch(() => {})
+}
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { document.body.classList.remove('recording'); clearTimeout(hideTimer) }
+  if (e.key === 'r' || e.key === 'R' || e.key === 'к' || e.key === 'К') play(stage.dataset.scene || 'intro')
+  if (e.key === '1') play('intro')
+  if (e.key === '2') play('outro')
+})
+// При открытии сразу проигрываем сцену из адреса (#outro) или интро; панель остаётся видна
+const first = location.hash === '#outro' ? 'outro' : 'intro'
+document.querySelectorAll('.scene').forEach((s) => s.classList.toggle('on', s.id === first))
+stage.classList.add('play'); stage.dataset.scene = first
+</script>
